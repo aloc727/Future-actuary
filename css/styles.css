@@ -1,0 +1,120 @@
+/* AI Risk Lens — shared styles. Bootstrap 5 does the heavy lifting; this
+   adds the brand palette, hero treatment, and chart/card polish. */
+
+:root {
+  --ink: #0f172a;
+  --ink-soft: #334155;
+  --accent: #2563eb;
+  --accent-dk: #1d4ed8;
+  --danger: #b91c1c;
+  --good: #16a34a;
+  --paper: #f8fafc;
+  --line: #e2e8f0;
+}
+
+body {
+  color: var(--ink);
+  background: #ffffff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+a { color: var(--accent-dk); }
+
+.navbar-brand { font-weight: 700; letter-spacing: -0.01em; }
+.brand-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff; font-weight: 800; margin-right: 8px; font-size: 0.9rem;
+}
+
+/* Hero */
+.hero {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(124,58,237,0.10), transparent),
+    radial-gradient(900px 450px at 0% 0%, rgba(37,99,235,0.10), transparent),
+    var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.hero h1 { font-weight: 800; letter-spacing: -0.02em; }
+.eyebrow {
+  text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.78rem;
+  font-weight: 700; color: var(--accent-dk);
+}
+.lead-tight { font-size: 1.15rem; color: var(--ink-soft); }
+
+/* Thesis "old vs new" comparison */
+.compare-card { border: 1px solid var(--line); border-radius: 14px; height: 100%; }
+.compare-card .card-header {
+  font-weight: 700; border-bottom: 1px solid var(--line); background: #fff;
+  border-top-left-radius: 14px; border-top-right-radius: 14px;
+}
+.compare-old .card-header { color: var(--ink-soft); }
+.compare-new .card-header { color: var(--accent-dk); }
+.compare-card ul { margin: 0; padding-left: 1.1rem; }
+.compare-card li { margin-bottom: .5rem; }
+
+/* Metric cards */
+.metric-card {
+  border: 1px solid var(--line); border-radius: 14px; padding: 1rem 1.1rem;
+  background: #fff; height: 100%;
+}
+.metric-card .metric-label {
+  font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-soft); font-weight: 700;
+}
+.metric-card .metric-value { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
+.metric-card .metric-sub { font-size: 0.82rem; color: var(--ink-soft); }
+.metric-card.is-danger .metric-value { color: var(--danger); }
+.metric-card.is-accent .metric-value { color: var(--accent-dk); }
+
+/* Chart panels */
+.panel { border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.panel .panel-head { padding: .9rem 1.1rem .2rem; }
+.panel h5 { font-weight: 700; margin: 0; }
+.panel .chart-wrap { position: relative; height: 300px; padding: .5rem 1rem 1rem; }
+.caption {
+  font-size: 0.85rem; color: var(--ink-soft); border-top: 1px dashed var(--line);
+  padding: .7rem 1.1rem; margin: 0;
+}
+.caption .tag {
+  display: inline-block; font-weight: 700; color: var(--accent-dk);
+}
+
+/* Controls */
+.controls { border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.controls label { font-weight: 600; font-size: 0.9rem; }
+.controls .val { font-weight: 800; color: var(--accent-dk); }
+
+/* Credibility gauge center text */
+.gauge-z { font-size: 1.6rem; font-weight: 800; color: var(--accent-dk); }
+
+/* Paper / markdown rendering */
+.paper-body { max-width: 860px; }
+.paper-body h2 { font-weight: 800; letter-spacing: -0.01em; margin-top: 2.2rem; }
+.paper-body h3 { font-weight: 700; margin-top: 1.6rem; }
+.paper-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.94rem; }
+.paper-body th, .paper-body td { border: 1px solid var(--line); padding: .55rem .7rem; vertical-align: top; }
+.paper-body th { background: var(--paper); text-align: left; }
+.paper-body code { background: var(--paper); padding: .1rem .35rem; border-radius: 5px; color: #be185d; }
+.paper-body pre { background: var(--ink); color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+.paper-body pre code { background: transparent; color: inherit; padding: 0; }
+.paper-body blockquote {
+  border-left: 4px solid var(--accent); background: var(--paper);
+  padding: .6rem 1rem; margin: 1rem 0; color: var(--ink-soft);
+}
+.formula {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+  padding: .8rem 1rem; margin: 1rem 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92rem; overflow-x: auto;
+}
+
+/* Table of contents */
+.toc { position: sticky; top: 1rem; font-size: 0.9rem; }
+.toc a { display: block; padding: .2rem 0; color: var(--ink-soft); text-decoration: none; border-left: 2px solid transparent; padding-left: .6rem; }
+.toc a:hover { color: var(--accent-dk); border-left-color: var(--accent); }
+
+footer { border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 0.9rem; }
+
+.badge-soft { background: rgba(37,99,235,0.10); color: var(--accent-dk); font-weight: 600; }
+.badge-danger-soft { background: rgba(185,28,28,0.10); color: var(--danger); font-weight: 600; }
