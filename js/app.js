@@ -1,10 +1,11 @@
 /*
- * app.js — "AI Risk Lens" UI wiring (multi-scenario).
+ * app.js — "AI Risk Lens" UI wiring (multi-scenario, dependence-aware).
  *
- * Generates the deterministic portfolio for the selected SCENARIO, runs the
- * actuarial.js primitives, and renders four Chart.js visuals plus summary
- * cards. Switching the scenario re-skins every label/caption to that domain's
- * language and recomputes. Everything is client-side: no fetch, no backend.
+ * Generates the deterministic portfolio for the selected SCENARIO (cached, so
+ * it regenerates only when the scenario or drift changes), runs the
+ * actuarial.js primitives, runs a seeded aggregate Monte-Carlo for
+ * dependence-aware economic capital, and renders the Chart.js visuals plus
+ * summary cards. All client-side: no fetch, no backend.
  */
 (function () {
   "use strict";
@@ -23,19 +24,30 @@
 
   var ctrl = {
     scenario: $("scenarioSelect"),
-    alpha: $("alphaSlider"),
-    k: $("kSlider"),
-    drift: $("driftSlider"),
+    alpha: $("alphaSlider"), k: $("kSlider"), drift: $("driftSlider"), rho: $("rhoSlider"),
     cohort: $("cohortSelect"),
-    alphaVal: $("alphaVal"),
-    kVal: $("kVal"),
-    driftVal: $("driftVal")
+    alphaVal: $("alphaVal"), kVal: $("kVal"), driftVal: $("driftVal"), rhoVal: $("rhoVal")
   };
 
   var charts = {};
   var scenario = D.getScenario("prior-auth");
+  var SIMS = 2000;
 
-  // ---- Chart.js plugins: VaR/TVaR markers + A/E=1 reference line ----
+  // Cache the generated book + its frequency/severity decomposition; these
+  // depend only on (scenario, drift), not on alpha/k/rho.
+  var cache = { key: null, records: null, fs: null };
+  function getBook(drift) {
+    var key = scenario.id + "|" + drift;
+    if (cache.key !== key) {
+      cache.records = D.generatePortfolio({ scenario: scenario.id, drift: drift });
+      cache.fs = A.frequencySeverity(cache.records);
+      cache.key = key;
+    }
+    return cache;
+  }
+  function simSeed() { return (scenario.seed * 2654435761) >>> 0; }
+
+  // ---- Chart.js plugins ----
   var verticalMarkers = {
     id: "verticalMarkers",
     afterDatasetsDraw: function (chart) {
@@ -59,7 +71,8 @@
   var aeReference = {
     id: "aeReference",
     afterDatasetsDraw: function (chart) {
-      if (!chart.config.options.plugins.aeReference) return;
+      var cfg = chart.config.options.plugins.aeReference;
+      if (!cfg) return;
       var ctx = chart.ctx, yAxis = chart.scales.y, xAxis = chart.scales.x;
       var y = yAxis.getPixelForValue(1.0);
       ctx.save();
@@ -67,6 +80,18 @@
       ctx.lineWidth = 2; ctx.strokeStyle = "#64748b"; ctx.setLineDash([5, 4]); ctx.stroke();
       ctx.fillStyle = "#475569"; ctx.font = "bold 11px system-ui, sans-serif"; ctx.textAlign = "left";
       ctx.fillText("A/E = 1.0 (as validated)", xAxis.left + 6, y - 5);
+      // 95% Poisson control-limit whiskers per cohort
+      var rows = cfg.rows || [];
+      var meta = chart.getDatasetMeta(0);
+      rows.forEach(function (r, i) {
+        var bar = meta.data[i]; if (!bar) return;
+        var yLo = yAxis.getPixelForValue(r.ciLow), yHi = yAxis.getPixelForValue(r.ciHigh);
+        ctx.strokeStyle = "#334155"; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(bar.x, yHi); ctx.lineTo(bar.x, yLo);
+        ctx.moveTo(bar.x - 5, yHi); ctx.lineTo(bar.x + 5, yHi);
+        ctx.moveTo(bar.x - 5, yLo); ctx.lineTo(bar.x + 5, yLo);
+        ctx.stroke();
+      });
       ctx.restore();
     }
   };
@@ -88,16 +113,14 @@
     return { labels: labels, counts: counts, edges: edges, width: width, top: top };
   }
   function binIndexFor(value, hist) {
-    return Math.min(hist.counts.length - 1, Math.floor(value / hist.width));
+    return Math.min(hist.counts.length - 1, Math.max(0, Math.floor(value / hist.width)));
   }
 
-  // ---- scenario plumbing ----
   function populateScenarios() {
     D.SCENARIO_LIST.forEach(function (id) {
       var sc = D.getScenario(id);
       var o = document.createElement("option");
-      o.value = id;
-      o.textContent = sc.label;
+      o.value = id; o.textContent = sc.label;
       ctrl.scenario.appendChild(o);
     });
     ctrl.scenario.value = "prior-auth";
@@ -105,8 +128,7 @@
 
   function populateCohorts() {
     ctrl.cohort.innerHTML = "";
-    scenario.cohorts.slice()
-      .map(function (c) { return c.name; })
+    scenario.cohorts.slice().map(function (c) { return c.name; })
       .sort(function (a, b) { return a.localeCompare(b); })
       .forEach(function (name) {
         var o = document.createElement("option");
@@ -118,50 +140,51 @@
 
   function applyScenarioText() {
     var ui = scenario.ui;
-    $("toolIntro").innerHTML = ui.intro +
-      " Numbers are deterministic (fixed seed) and reproduce the paper.";
-    $("driftLabelText").textContent = "Production drift";
+    $("toolIntro").innerHTML = ui.intro + " Numbers are deterministic (fixed seed) and reproduce the paper.";
     $("driftHelp").textContent = "Stresses " + ui.driftWho + ". Set to 0% to see A/E ≈ 1.";
     $("cardSeveritySub").textContent = ui.sevSub;
     $("capLoss").innerHTML = "<span class='tag'>What this means:</span> " + ui.capLoss;
-    $("capAE").innerHTML = "<span class='tag'>What this means:</span> " + ui.capAE;
+    $("capAE").innerHTML = "<span class='tag'>What this means:</span> " + ui.capAE +
+      " Whiskers are the 95% Poisson control band; a cohort is flagged only when it is outside the band <em>and</em> materially off 1.0.";
     $("capReserve").innerHTML = "<span class='tag'>What this means:</span> " + ui.capReserve;
     $("sectorBadge").textContent = scenario.sector;
   }
 
-  // ---- main pipeline ----
   function recompute() {
     var alpha = parseFloat(ctrl.alpha.value);
     var k = parseFloat(ctrl.k.value);
     var drift = parseFloat(ctrl.drift.value);
+    var rho = parseFloat(ctrl.rho.value);
 
     ctrl.alphaVal.textContent = alpha.toFixed(2);
     ctrl.kVal.textContent = k.toLocaleString("en-US");
     ctrl.driftVal.textContent = Math.round(drift * 100) + "%";
+    ctrl.rhoVal.textContent = rho.toFixed(2);
 
-    var records = D.generatePortfolio({ scenario: scenario.id, drift: drift });
-
-    var fs = A.frequencySeverity(records);
+    var book = getBook(drift);
+    var fs = book.fs;
     var vt = A.varTvar(fs.losses, alpha);
     var sevVT = A.varTvar(fs.severities, alpha);
-    var ae = A.actualToExpected(records.map(function (r) {
+    var ae = A.actualToExpected(book.records.map(function (r) {
       return { cohort: r.cohort, error: r.error, expectedRate: r.expectedRate };
     }));
     ae.rows.sort(function (a, b) { return a.cohort.localeCompare(b.cohort); });
 
-    var reported = records.reduce(function (s, r) { return s + r.reported; }, 0);
+    var reported = book.records.reduce(function (s, r) { return s + r.reported; }, 0);
     var ldf = 1 / scenario.reportingFraction;
     var ibnr = A.ibnrReserve(reported, ldf, fs.meanSeverity, sevVT.tvar);
     var ec = A.economicCapital(vt.tvar, fs.expectedLoss, fs.n);
+    var agg = A.aggregateLossSim(fs.severities, fs.frequency, fs.n,
+      { alpha: alpha, rho: rho, sims: SIMS, seed: simSeed() });
 
-    updateCards(fs, vt);
+    updateCards(fs, vt, alpha);
     updateLossChart(fs, vt);
     updateAEChart(ae);
     updateCredibility(ae, fs, k);
-    updateReserveCard(fs, vt, sevVT, ibnr, ec, reported, ldf);
+    updateReserveCard(fs, vt, sevVT, ibnr, ec, agg, reported, ldf, rho);
   }
 
-  function updateCards(fs, vt) {
+  function updateCards(fs, vt, alpha) {
     $("cardFrequency").textContent = pct(fs.frequency);
     $("cardErrors").textContent = fs.errorCount.toLocaleString("en-US") + " " +
       scenario.ui.errors + " / " + fs.n.toLocaleString("en-US") + " " + scenario.ui.decisionsShort;
@@ -170,6 +193,14 @@
     $("cardExpLossPort").textContent = moneyShort(fs.expectedLoss * fs.n) + " across the book";
     $("cardVar").textContent = money(vt.var);
     $("cardTvar").textContent = money(vt.tvar);
+    // Low-alpha guard: if VaR sits in the correct-decision point mass, say so.
+    var note = $("alphaNote");
+    if (note) {
+      if (vt.var <= 0) {
+        note.textContent = "α is below the error rate, so VaR sits in the correct-decision mass (VaR ≈ $0). Raise α above " + (1 - fs.frequency).toFixed(2) + " to size the error tail.";
+        note.style.display = "";
+      } else { note.style.display = "none"; }
+    }
   }
 
   function updateLossChart(fs, vt) {
@@ -179,12 +210,10 @@
     var data = {
       labels: hist.labels,
       datasets: [{
-        label: "Errors by dollar damage",
-        data: hist.counts,
+        label: "Errors by dollar damage", data: hist.counts,
         backgroundColor: hist.counts.map(function (_, i) {
           return i >= varIdx ? "rgba(220,38,38,0.75)" : "rgba(37,99,235,0.65)";
-        }),
-        borderWidth: 0
+        }), borderWidth: 0
       }]
     };
     var options = {
@@ -208,6 +237,7 @@
   }
 
   function updateAEChart(ae) {
+    var maxAE = Math.max.apply(null, ae.rows.map(function (r) { return r.ciHigh; }).concat([1.6]));
     var data = {
       labels: ae.rows.map(function (r) { return r.cohort; }),
       datasets: [{
@@ -215,22 +245,26 @@
         data: ae.rows.map(function (r) { return r.ae; }),
         backgroundColor: ae.rows.map(function (r) {
           return r.flag ? "rgba(220,38,38,0.8)" : "rgba(22,163,74,0.75)";
-        }),
-        borderWidth: 0
+        }), borderWidth: 0
       }]
     };
     var options = {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: false }, aeReference: true,
+        legend: { display: false }, aeReference: { rows: ae.rows },
         tooltip: { callbacks: { label: function (it) {
           var r = ae.rows[it.dataIndex];
-          return "A/E " + r.ae.toFixed(3) + "  (" + r.actual + " actual vs " + r.expected.toFixed(0) + " expected)";
+          return [
+            "A/E " + r.ae.toFixed(3) + "  (" + r.actual + " actual vs " + r.expected.toFixed(0) + " expected)",
+            "95% control band: " + r.ciLow.toFixed(2) + "–" + r.ciHigh.toFixed(2) + "  (z = " + r.z.toFixed(1) + ")",
+            r.flag ? "⚠ flagged: significant & material" : "within tolerance"
+          ];
         } } }
       },
       scales: {
         x: { title: { display: true, text: scenario.ui.cohortAxis } },
-        y: { title: { display: true, text: "Actual / Expected " + scenario.ui.errors }, beginAtZero: true, suggestedMax: 1.6 }
+        y: { title: { display: true, text: "Actual / Expected " + scenario.ui.errors },
+             beginAtZero: true, suggestedMax: Math.max(1.6, maxAE * 1.05) }
       }
     };
     if (charts.ae) { charts.ae.data = data; charts.ae.options = options; charts.ae.update(); }
@@ -264,19 +298,19 @@
       "<br>Credibility-weighted estimate: <strong>" + pct(cred.estimate) + "</strong>";
   }
 
-  function updateReserveCard(fs, vt, sevVT, ibnr, ec, reported, ldf) {
+  function updateReserveCard(fs, vt, sevVT, ibnr, ec, agg, reported, ldf, rho) {
     var u = scenario.ui;
     var rows = [
       ["Reported (surfaced) " + u.errors, reported.toLocaleString("en-US")],
       ["Loss-development factor (LDF)", ldf.toFixed(2)],
       ["Estimated ultimate " + u.errors, Math.round(ibnr.ultimateCount).toLocaleString("en-US")],
       ["IBNR (not-yet-surfaced) " + u.errors, Math.round(ibnr.ibnrCount).toLocaleString("en-US")],
-      ["IBNR best estimate", money(ibnr.bestEstimate)],
-      ["Risk margin (to tail severity)", money(ibnr.riskMargin)],
       ["<strong>Reserve to hold</strong>", "<strong>" + money(ibnr.reserve) + "</strong>"],
+      ["&nbsp;", "&nbsp;"],
       ["Tail severity TVaR (per " + u.error + ")", money(sevVT.tvar)],
-      ["Economic capital / " + u.decisionsShort.replace(/s$/, ""), money(ec.perDecision)],
-      ["<strong>Economic capital (undiversified book)</strong>", "<strong>" + moneyShort(ec.portfolio) + "</strong>"]
+      ["<strong>Economic capital, aggregate (ρ = " + rho.toFixed(2) + ")</strong>", "<strong>" + moneyShort(agg.ec) + "</strong>"],
+      ["&nbsp;· independent (ρ = 0)", moneyShort(A.aggregateLossSim(fs.severities, fs.frequency, fs.n, { alpha: vt.alpha, rho: 0, sims: SIMS, seed: simSeed() }).ec)],
+      ["&nbsp;· undiversified upper bound", moneyShort(ec.portfolio)]
     ];
     $("reserveTable").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r[0] + "</td><td class='text-end'>" + r[1] + "</td></tr>";
@@ -291,22 +325,30 @@
     recompute();
   }
 
+  // Debounce slider input to one recompute per animation frame.
+  var pending = false;
+  function scheduleRecompute() {
+    if (pending) return;
+    pending = true;
+    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () {
+      pending = false; recompute();
+    });
+  }
+
   // ---- wire up ----
   populateScenarios();
   ctrl.scenario.addEventListener("change", switchScenario);
-  ["alpha", "k", "drift"].forEach(function (key) {
-    ctrl[key].addEventListener("input", recompute);
+  ["alpha", "k", "drift", "rho"].forEach(function (key) {
+    ctrl[key].addEventListener("input", scheduleRecompute);
   });
   ctrl.cohort.addEventListener("change", recompute);
   $("resetBtn").addEventListener("click", function () {
-    ctrl.alpha.value = 0.95;
-    ctrl.k.value = 2500;
-    ctrl.drift.value = scenario.drift;
+    ctrl.alpha.value = 0.95; ctrl.k.value = 2500;
+    ctrl.drift.value = scenario.drift; ctrl.rho.value = 0.15;
     ctrl.cohort.value = scenario.ui.defaultCredCohort;
     recompute();
   });
 
-  // initial render
   populateCohorts();
   applyScenarioText();
   recompute();

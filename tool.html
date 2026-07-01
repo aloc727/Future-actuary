@@ -49,31 +49,42 @@
 
   <!-- CONTROLS -->
   <div class="controls p-3 p-md-4 mb-4">
-    <div class="row g-4 align-items-end">
-      <div class="col-md-3">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-5 g-4 align-items-end">
+      <div class="col">
         <label for="alphaSlider" class="form-label d-flex justify-content-between">
           <span>Tail level α</span><span class="val" id="alphaVal">0.95</span>
         </label>
-        <input type="range" class="form-range" id="alphaSlider" min="0.80" max="0.995" step="0.005" value="0.95">
+        <input type="range" class="form-range" id="alphaSlider" min="0.80" max="0.995" step="0.005" value="0.95"
+               aria-label="Tail level alpha for VaR and TVaR">
         <div class="form-text">Where VaR / TVaR start measuring the tail.</div>
       </div>
-      <div class="col-md-3">
+      <div class="col">
         <label for="kSlider" class="form-label d-flex justify-content-between">
           <span>Credibility constant k</span><span class="val" id="kVal">2,500</span>
         </label>
-        <input type="range" class="form-range" id="kSlider" min="200" max="8000" step="100" value="2500">
+        <input type="range" class="form-range" id="kSlider" min="200" max="8000" step="100" value="2500"
+               aria-label="Buhlmann credibility constant k">
         <div class="form-text">Bigger k ⇒ more evidence needed before a cohort is "believed."</div>
       </div>
-      <div class="col-md-3">
+      <div class="col">
         <label for="driftSlider" class="form-label d-flex justify-content-between">
           <span id="driftLabelText">Production drift</span><span class="val" id="driftVal">35%</span>
         </label>
-        <input type="range" class="form-range" id="driftSlider" min="0" max="1.0" step="0.05" value="0.35">
+        <input type="range" class="form-range" id="driftSlider" min="0" max="1.0" step="0.05" value="0.35"
+               aria-label="Production drift stress on flagged cohorts">
         <div class="form-text" id="driftHelp">Set to 0% to see A/E ≈ 1.</div>
       </div>
-      <div class="col-md-3">
+      <div class="col">
+        <label for="rhoSlider" class="form-label d-flex justify-content-between">
+          <span>Systemic correlation ρ</span><span class="val" id="rhoVal">0.15</span>
+        </label>
+        <input type="range" class="form-range" id="rhoSlider" min="0" max="1.0" step="0.05" value="0.15"
+               aria-label="Systemic correlation rho for aggregate economic capital">
+        <div class="form-text">Common-cause failure clustering. Drives diversified capital.</div>
+      </div>
+      <div class="col">
         <label for="cohortSelect" class="form-label">Credibility cohort</label>
-        <select id="cohortSelect" class="form-select"></select>
+        <select id="cohortSelect" class="form-select" aria-label="Cohort shown in the credibility gauge"></select>
         <button id="resetBtn" class="btn btn-sm btn-outline-secondary mt-2 w-100">Reset to paper defaults</button>
       </div>
     </div>
@@ -111,6 +122,8 @@
     </div>
   </div>
 
+  <div id="alphaNote" class="alert alert-warning py-2 small mb-4" role="status" style="display:none"></div>
+
   <!-- ROW 1: loss dist + A/E -->
   <div class="row g-4 mb-4">
     <div class="col-lg-7">
@@ -119,7 +132,7 @@
           <h5>1 · Frequency × Severity loss distribution</h5>
           <span class="badge badge-soft rounded-pill">replaces the single accuracy number</span>
         </div>
-        <div class="chart-wrap"><canvas id="lossChart"></canvas></div>
+        <div class="chart-wrap"><canvas id="lossChart" role="img" aria-label="Loss distribution histogram with VaR and TVaR markers"></canvas></div>
         <p class="caption" id="capLoss"></p>
       </div>
     </div>
@@ -129,7 +142,7 @@
           <h5>2 · Actual-to-Expected drift study</h5>
           <span class="badge badge-danger-soft rounded-pill">replaces one-time validation</span>
         </div>
-        <div class="chart-wrap"><canvas id="aeChart"></canvas></div>
+        <div class="chart-wrap"><canvas id="aeChart" role="img" aria-label="Actual-to-Expected by cohort with 95 percent Poisson control limits"></canvas></div>
         <p class="caption" id="capAE"></p>
       </div>
     </div>
@@ -143,7 +156,7 @@
           <h5>3 · Credibility of a cohort's signal</h5>
           <span class="badge badge-soft rounded-pill">how much trust an output earns</span>
         </div>
-        <div class="chart-wrap" style="height:230px"><canvas id="credChart"></canvas></div>
+        <div class="chart-wrap" style="height:230px"><canvas id="credChart" role="img" aria-label="Credibility gauge showing Z, the weight on the cohort's own experience"></canvas></div>
         <div class="text-center"><span class="gauge-z" id="credZ">Z = —</span></div>
         <p class="caption" id="credDetail">—</p>
         <p class="caption"><span class="tag">What this means:</span>
@@ -164,7 +177,7 @@
           </table>
         </div>
         <p class="caption" id="capReserve"></p>
-        <p class="caption pt-0" style="border-top:none">Economic capital (TVaR − expected loss) is the buffer for the tail beyond the reserve; the portfolio figure is an <em>undiversified</em> upper bound (see paper §9).</p>
+        <p class="caption pt-0" style="border-top:none"><span class="tag">Aggregate capital:</span> economic capital = TVaR − expected loss read from a seeded <strong>Monte-Carlo of the whole book</strong> (mixed-Poisson compound with a shared systemic factor). The <strong>ρ slider</strong> sets common-cause clustering: ρ = 0 is near-independent (maximal diversification); raising ρ fattens the aggregate tail toward the <em>undiversified</em> bound (per-decision TVaR × N). See paper §5.6.</p>
       </div>
     </div>
   </div>

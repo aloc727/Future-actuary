@@ -9,7 +9,9 @@
   <link href="css/styles.css" rel="stylesheet">
   <script>
     window.MathJax = {
-      tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] },
+      // Inline math uses \( \) only — NOT $…$ — so literal dollar amounts in
+      // the prose (there are many) never get mis-parsed as math.
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['$$', '$$']] },
       options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
     };
   </script>
@@ -89,10 +91,11 @@
     .then(function (raw) {
       // Protect LaTeX math from Markdown's emphasis/escaping, then restore
       // it verbatim so MathJax sees clean TeX.
+      // Protect ONLY $$…$$ display blocks from Markdown. Single $ (dollar
+      // amounts) are left alone — MathJax no longer treats $ as a delimiter.
       var math = [];
       var src = raw
-        .replace(/\$\$[\s\S]*?\$\$/g, function (m) { math.push(m); return "@@MATH" + (math.length - 1) + "@@"; })
-        .replace(/\$[^\$\n]+?\$/g, function (m) { math.push(m); return "@@MATH" + (math.length - 1) + "@@"; });
+        .replace(/\$\$[\s\S]*?\$\$/g, function (m) { math.push(m); return "@@MATH" + (math.length - 1) + "@@"; });
 
       marked.setOptions({ gfm: true, breaks: false });
       var html = marked.parse(src);

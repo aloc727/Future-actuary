@@ -18,7 +18,7 @@ worked example.
 |---|---|
 | **`index.html`** | Landing page: the thesis, the "old vs. new" comparison, the regulatory anchor, and the seven method mappings. |
 | **`paper.html`** | The full framework paper, *Reserving Against the Black Box*, rendered from Markdown with math (MathJax). |
-| **`tool.html`** | The **AI Risk Lens** — a live tool that computes the actuarial metrics on a 10,000-decision synthetic book, with Chart.js visuals and tweakable inputs. A **scenario switcher** runs the same lens over four domains: a health-insurer prior-auth model, a **BPO customer-operations agent**, a **marketing campaign agent**, and a **software-engineering coding agent**. |
+| **`tool.html`** | The **AI Risk Lens** — a live tool that computes the actuarial metrics on a 10,000-decision synthetic book, with Chart.js visuals and tweakable inputs. A **scenario switcher** runs the same lens over **eight** domains: a health-insurer prior-auth model, a **BPO customer-operations agent**, a **marketing campaign agent**, a **software-engineering coding agent**, a **bank fraud/AML agent**, a **credit-underwriting agent**, a **clinical-triage agent**, and a **customer-support agent**. |
 | **`docs/ACTUARIAL_AI_EXPLAINABILITY.md`** | Markdown source of the paper (single source of truth). |
 
 ```
@@ -29,7 +29,8 @@ worked example.
 /js/actuarial.js     pure actuarial functions (frequencySeverity, buhlmannCredibility,
                      actualToExpected, varTvar, ibnrReserve, economicCapital)
 /js/sample-data.js   deterministic, seeded synthetic 10k-decision portfolios
-                     (a scenario registry: prior-auth, BPO, marketing, SWE)
+                     (8-scenario registry: prior-auth, BPO, marketing, SWE,
+                     fraud/AML, credit, clinical triage, customer support)
 /js/app.js           UI wiring + Chart.js visuals
 /docs/ACTUARIAL_AI_EXPLAINABILITY.md   the paper, in Markdown
 /README.md
