@@ -285,8 +285,17 @@ severity) — as an upper reference. But a single factor hides both the *pattern
   IBNR. This yields a best estimate, a standard error, and percentiles — so the **risk margin is
   a defensible 75th-percentile** (IFRS 17 style), not an ad-hoc severity load.
 
-Reserve dollars are the IBNR count distribution × mean severity. (Severity-tail uncertainty is
-a further refinement — §9.) The single-factor tail-loaded figure and the stochastic
+**Severity-aware reserve (heavy tails).** Reserve *dollars* are not the IBNR count × a fixed
+mean severity — that ignores how expensive the late claims might be. Instead the tool fits a
+**generalized-Pareto distribution (GPD)** to the severity exceedances over a high threshold `u`
+(peaks-over-threshold, method of moments), yielding a **tail index `ξ̂`** (`ξ ≈ 0`
+exponential-tailed; `ξ > 0` heavy/power-law). Each bootstrap trial's IBNR claims are then
+costed by drawing per-claim severities from the **empirical body spliced with the GPD tail**,
+so severity variability and tail risk propagate into the reserve percentiles. The synthetic
+books span the regimes — prior-auth is essentially exponential (`ξ̂ ≈ 0`), while the
+software-engineering and clinical-triage books are mildly heavy (`ξ̂ ≈ 0.16–0.20`, from their
+larger severity dispersion); the tool reports the GPD tail-TVaR alongside the empirical one as
+a sensitivity check. The single-factor tail-loaded figure and the severity-aware
 best-estimate-plus-margin bracket the reserve from above and from a principled centre.
 
 ### 5.6 Economic capital (aggregate, dependence-aware)
@@ -410,19 +419,23 @@ assuming every late claim is a tail claim.
 **Stochastic development triangle (§5.5).** The real reserving decomposes the same lag into an
 accident × development triangle and quantifies the *uncertainty*:
 
-| Method | Ultimate | IBNR | Reserve ($) |
+| Method | Ultimate | IBNR | Reserve ($, severity-aware) |
 |---|---:|---:|---:|
 | Reported to date | 606 | — | — |
 | Chain-ladder | 905 | 299 | — |
 | Bornhuetter-Ferguson | 870 | 264 | — |
-| **Bootstrap (ODP)** | — | **305 ± 63** (CV 21%) | **best est. $3.49M** |
-| Bootstrap 75th pctile (IFRS-17 margin) | — | 345 | **$3.94M** |
-| Bootstrap 95th pctile | — | 413 | $4.73M |
+| **Bootstrap (ODP) best estimate** | — | **305 ± 63** (CV 21%) | **$3.50M** |
+| Bootstrap 75th pctile (IFRS-17 margin) | — | — | **$3.93M** |
+| Bootstrap 95th pctile | — | — | $4.83M |
+| Bootstrap 99th pctile | — | — | $5.48M |
 
 The **best estimate is ≈ $3.5M**, with a **75th-percentile risk margin bringing it to ≈
-$3.9M** — a defensible, distribution-based reserve, not the $15.7M tail load. The gap between
-the two *is* the conservatism the simple method bakes in; the framework shows both and lets a
-signer choose the margin explicitly.
+$3.9M** — a defensible, distribution-based reserve, not the $15.7M tail load. The reserve $ are
+**severity-aware** (§5.5): the GPD tail index here is `ξ̂ ≈ 0` (prior-auth severities are
+essentially exponential), so the empirical and GPD tails agree and the extra spread over the
+count-only bootstrap is modest; in the heavier-tailed books (`ξ̂ ≈ 0.16–0.20`) the percentiles
+widen more. The gap between the best estimate and the $15.7M tail load *is* the conservatism the
+simple method bakes in; the framework shows both and lets a signer choose the margin explicitly.
 
 **Economic capital (§5.6).** From the aggregate Monte-Carlo: **$1.05M independent (ρ = 0)**,
 **$6.57M at ρ = 0.15**, versus the **$163.55M** undiversified `N·(TVaR − E[L])` upper bound —
@@ -658,9 +671,10 @@ weak. It is.
    — rather than a single factor. Two honest gaps remain: (a) if ground truth is *never*
    observed for some decisions (the denied patient who never appeals, the declined applicant who
    never gets to default), the reporting pattern is a modeling choice and **reject-inference /
-   censoring** is needed — the natural next extension; and (b) the bootstrap captures *count*
-   uncertainty but the reserve still multiplies by a fixed mean **severity**, so severity-tail
-   uncertainty (a heavy-tailed/EVT severity model) is not yet propagated.
+   censoring** is needed — the natural next extension; and (b) severity-tail uncertainty is now
+   **propagated** — each bootstrap claim is costed from the empirical body spliced with a fitted
+   **GPD tail** (§5.5) — but the tail index `ξ̂` is itself estimated from limited exceedances, so
+   the tail of the tail remains the least certain part of any reserve.
 
 2. **Exchangeability / stationarity.** A/E, credibility, and reserving all assume cohorts are
    reasonably exchangeable over the measurement window. Under fast distribution shift the
