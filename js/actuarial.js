@@ -228,8 +228,179 @@
     };
   }
 
+  // ---- 8. Stochastic reserving: development triangle -----------------------
+  // Replaces the single-factor LDF with a real accident-period × development-
+  // lag triangle, chain-ladder projection, Bornhuetter-Ferguson, and an
+  // over-dispersed-Poisson bootstrap for a full reserve DISTRIBUTION.
+  //
+  // Records must carry `accPeriod` and `devLag` (added by sample-data.js from a
+  // SEPARATE seeded pass, so the primary frequency/severity draws are
+  // untouched). An error is "reported" by the valuation date iff
+  // accPeriod + devLag <= P-1.
+
+  function developmentTriangle(records, P) {
+    P = P || 8;
+    var inc = [], a, d;
+    for (a = 0; a < P; a++) { inc[a] = []; for (d = 0; d < P; d++) inc[a][d] = 0; }
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (!r.error || r.accPeriod == null || r.devLag == null) continue;
+      if (r.accPeriod + r.devLag <= P - 1) inc[r.accPeriod][r.devLag]++;
+    }
+    var cum = [];
+    for (a = 0; a < P; a++) {
+      cum[a] = []; var run = 0;
+      for (d = 0; d < P; d++) {
+        if (a + d <= P - 1) { run += inc[a][d]; cum[a][d] = run; } else cum[a][d] = null;
+      }
+    }
+    return { P: P, inc: inc, cum: cum };
+  }
+
+  // Chain-ladder on a cumulative triangle. Returns dev factors, per-accident
+  // ultimates, the fitted incrementals (needed for the bootstrap), and IBNR.
+  function chainLadder(tri) {
+    var P = tri.P, cum = tri.cum, a, d;
+    var f = [];
+    for (d = 0; d < P - 1; d++) {
+      var num = 0, den = 0;
+      for (a = 0; a + d + 1 <= P - 1; a++) {
+        if (cum[a][d] != null && cum[a][d + 1] != null) { num += cum[a][d + 1]; den += cum[a][d]; }
+      }
+      f[d] = den > 0 ? num / den : 1;
+    }
+    var ultimate = [], latest = [], reported = 0, ult = 0;
+    for (a = 0; a < P; a++) {
+      var dl = P - 1 - a, c = cum[a][dl] != null ? cum[a][dl] : 0;
+      latest[a] = c; reported += c;
+      var u = c; for (d = dl; d < P - 1; d++) u *= f[d];
+      ultimate[a] = u; ult += u;
+    }
+    // fitted cumulative (backward recursion) -> fitted incrementals on observed cells
+    var fit = [];
+    for (a = 0; a < P; a++) {
+      fit[a] = []; var dl2 = P - 1 - a;
+      fit[a][dl2] = latest[a];
+      for (d = dl2 - 1; d >= 0; d--) fit[a][d] = f[d] > 0 ? fit[a][d + 1] / f[d] : fit[a][d + 1];
+    }
+    var fitInc = [];
+    for (a = 0; a < P; a++) {
+      fitInc[a] = [];
+      for (d = 0; d <= P - 1 - a; d++) fitInc[a][d] = d === 0 ? fit[a][0] : fit[a][d] - fit[a][d - 1];
+    }
+    return {
+      devFactors: f, ultimate: ultimate, latest: latest, fitInc: fitInc,
+      reportedTotal: reported, ultimateTotal: ult, ibnrCount: Math.max(0, ult - reported)
+    };
+  }
+
+  // Bornhuetter-Ferguson: blends the chain-ladder development pattern with an
+  // a-priori ultimate (here the model's EXPECTED error count per accident
+  // period). Robust when the latest periods are immature.
+  function bornhuetterFerguson(tri, cl, aprioriByAcc) {
+    var P = tri.P, f = cl.devFactors, a, d;
+    // cumulative development factor from maturity (P-1-a) to ultimate
+    var ibnr = 0, ult = 0;
+    for (a = 0; a < P; a++) {
+      var dl = P - 1 - a, cdf = 1;
+      for (d = dl; d < P - 1; d++) cdf *= (f[d] || 1);
+      var pctUnreported = cdf > 0 ? 1 - 1 / cdf : 0;
+      var ap = aprioriByAcc[a] || 0;
+      var bfUlt = cl.latest[a] + ap * pctUnreported;
+      ult += bfUlt; ibnr += ap * pctUnreported;
+    }
+    return { ultimateTotal: ult, ibnrCount: Math.max(0, ibnr) };
+  }
+
+  // Over-dispersed-Poisson bootstrap (England-Verrall). Resamples Pearson
+  // residuals of the chain-ladder fit, refits, and adds ODP process error, to
+  // produce a predictive distribution of the IBNR count. Seeded => reproducible.
+  function bootstrapReserve(tri, cl, opts) {
+    opts = opts || {};
+    var B = opts.B || 1000, seed = opts.seed || 987654321;
+    var P = tri.P, inc = tri.inc, fit = cl.fitInc, a, d;
+    // Pearson residuals on observed cells with positive fitted mean.
+    var res = [], nObs = 0;
+    for (a = 0; a < P; a++) for (d = 0; d <= P - 1 - a; d++) {
+      var m = fit[a][d];
+      if (m > 0) { res.push((inc[a][d] - m) / Math.sqrt(m)); nObs++; }
+    }
+    var params = 2 * P - 1;            // CL parameters
+    var dof = Math.max(1, nObs - params);
+    var phi = 0; for (var t = 0; t < res.length; t++) phi += res[t] * res[t]; phi = phi / dof;
+    var scaleAdj = Math.sqrt(nObs / dof);
+    var rng = mulberry32(seed >>> 0);
+    var samples = new Array(B);
+    for (var b = 0; b < B; b++) {
+      // pseudo incrementals = m + r*·sqrt(m)
+      var pcum = [];
+      for (a = 0; a < P; a++) {
+        pcum[a] = []; var run = 0;
+        for (d = 0; d <= P - 1 - a; d++) {
+          var mm = fit[a][d];
+          var rr = res[(res.length * rng()) | 0] * scaleAdj;
+          var pv = mm + rr * Math.sqrt(Math.max(mm, 0));
+          run += pv; pcum[a][d] = run;
+        }
+      }
+      // refit chain-ladder on pseudo-triangle
+      var pf = [];
+      for (d = 0; d < P - 1; d++) {
+        var nu = 0, de = 0;
+        for (a = 0; a + d + 1 <= P - 1; a++) { nu += pcum[a][d + 1]; de += pcum[a][d]; }
+        pf[d] = de > 0 ? nu / de : 1;
+      }
+      // project future incrementals + ODP process error via Gamma(mean, var=phi*mean)
+      var ibnr = 0;
+      for (a = 1; a < P; a++) {
+        var dl = P - 1 - a, cprev = pcum[a][dl];
+        for (d = dl; d < P - 1; d++) {
+          var cnext = cprev * (pf[d] || 1);
+          var meanInc = Math.max(0, cnext - cprev);
+          if (meanInc > 0 && phi > 0) {
+            var shape = meanInc / phi;
+            ibnr += shape >= 1 ? gammaSample(rng, shape) * phi : meanInc; // Gamma mean=meanInc, var=phi*meanInc
+          } else ibnr += meanInc;
+          cprev = cnext;
+        }
+      }
+      samples[b] = ibnr;
+    }
+    var meanI = mean(samples);
+    var variance = 0; for (t = 0; t < B; t++) variance += Math.pow(samples[t] - meanI, 2);
+    var se = Math.sqrt(variance / Math.max(1, B - 1));
+    return {
+      mean: meanI, se: se, cv: meanI > 0 ? se / meanI : 0,
+      p75: quantile(samples, 0.75), p95: quantile(samples, 0.95), B: B, phi: phi
+    };
+  }
+
+  // Empirical Bühlmann (Bühlmann-Straub with exposure = decision count):
+  // estimate the credibility constant k = EPV / VHM from the cohorts' variance
+  // components, instead of leaving k a free dial. cohorts: [{ n, errors }].
+  function buhlmannStraubK(cohorts) {
+    var I = cohorts.length, totN = 0, totErr = 0, i;
+    for (i = 0; i < I; i++) { totN += cohorts[i].n; totErr += cohorts[i].errors; }
+    if (totN === 0) return { mu: 0, epv: 0, vhm: 0, k: Infinity };
+    var mu = totErr / totN;
+    var epv = 0;
+    for (i = 0; i < I; i++) { var p = cohorts[i].errors / cohorts[i].n; epv += cohorts[i].n * p * (1 - p); }
+    epv = epv / totN;                                   // expected process variance (per decision)
+    var num = 0, sumSq = 0;
+    for (i = 0; i < I; i++) { var pi = cohorts[i].errors / cohorts[i].n; num += cohorts[i].n * Math.pow(pi - mu, 2); sumSq += cohorts[i].n * cohorts[i].n; }
+    var denom = totN - sumSq / totN;
+    var vhm = denom > 0 ? (num - (I - 1) * epv) / denom : 0;
+    var k = vhm > 0 ? epv / vhm : Infinity;
+    return { mu: mu, epv: epv, vhm: vhm, k: k };
+  }
+
   var api = {
     mean: mean, sum: sum, quantile: quantile,
+    developmentTriangle: developmentTriangle,
+    chainLadder: chainLadder,
+    bornhuetterFerguson: bornhuetterFerguson,
+    bootstrapReserve: bootstrapReserve,
+    buhlmannStraubK: buhlmannStraubK,
     frequencySeverity: frequencySeverity,
     buhlmannCredibility: buhlmannCredibility,
     actualToExpected: actualToExpected,

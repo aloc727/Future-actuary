@@ -35,17 +35,29 @@
 
   // Cache the generated book + its frequency/severity decomposition; these
   // depend only on (scenario, drift), not on alpha/k/rho.
-  var cache = { key: null, records: null, fs: null };
+  function simSeed() { return (scenario.seed * 2654435761) >>> 0; }
+
+  var cache = { key: null };
   function getBook(drift) {
     var key = scenario.id + "|" + drift;
     if (cache.key !== key) {
-      cache.records = D.generatePortfolio({ scenario: scenario.id, drift: drift });
-      cache.fs = A.frequencySeverity(cache.records);
-      cache.key = key;
+      var recs = D.generatePortfolio({ scenario: scenario.id, drift: drift });
+      var fs = A.frequencySeverity(recs);
+      var P = D.DEV_PERIODS;
+      var tri = A.developmentTriangle(recs, P);
+      var cl = A.chainLadder(tri);
+      var apriori = new Array(P).fill(0);
+      recs.forEach(function (r) { apriori[r.accPeriod] += r.expectedRate; });
+      var bf = A.bornhuetterFerguson(tri, cl, apriori);
+      var boot = A.bootstrapReserve(tri, cl, { B: 1200, seed: simSeed() });
+      var surfaced = recs.reduce(function (s, r) { return s + (r.surfaced || 0); }, 0);
+      var kcoh = {};
+      recs.forEach(function (r) { (kcoh[r.cohort] = kcoh[r.cohort] || { n: 0, errors: 0 }); kcoh[r.cohort].n++; kcoh[r.cohort].errors += r.error; });
+      var kHat = A.buhlmannStraubK(Object.keys(kcoh).map(function (c) { return kcoh[c]; }));
+      cache = { key: key, records: recs, fs: fs, tri: tri, cl: cl, bf: bf, boot: boot, surfaced: surfaced, kHat: kHat };
     }
     return cache;
   }
-  function simSeed() { return (scenario.seed * 2654435761) >>> 0; }
 
   // ---- Chart.js plugins ----
   var verticalMarkers = {
@@ -180,8 +192,9 @@
     updateCards(fs, vt, alpha);
     updateLossChart(fs, vt);
     updateAEChart(ae);
-    updateCredibility(ae, fs, k);
+    updateCredibility(ae, fs, k, book.kHat);
     updateReserveCard(fs, vt, sevVT, ibnr, ec, agg, reported, ldf, rho);
+    updateReservingDetail(book, fs.meanSeverity);
   }
 
   function updateCards(fs, vt, alpha) {
@@ -271,7 +284,16 @@
     else charts.ae = new Chart($("aeChart"), { type: "bar", data: data, options: options });
   }
 
-  function updateCredibility(ae, fs, k) {
+  function updateCredibility(ae, fs, k, kHat) {
+    var kn = $("kHatNote");
+    if (kn) {
+      if (kHat && isFinite(kHat.k)) {
+        kn.innerHTML = "Data-driven estimate: <strong>k̂ ≈ " + Math.round(kHat.k).toLocaleString("en-US") +
+          "</strong> (empirical Bühlmann-Straub). <a href='#' id='useKhat'>Use k̂</a>";
+      } else {
+        kn.innerHTML = "Data-driven estimate: cohorts nearly homogeneous ⇒ k̂ → ∞ (little own-experience credibility).";
+      }
+    }
     var cohortName = ctrl.cohort.value || scenario.ui.defaultCredCohort;
     var row = ae.rows.filter(function (r) { return r.cohort === cohortName; })[0] || ae.rows[0];
     var observed = row.actual / row.n;
@@ -305,7 +327,7 @@
       ["Loss-development factor (LDF)", ldf.toFixed(2)],
       ["Estimated ultimate " + u.errors, Math.round(ibnr.ultimateCount).toLocaleString("en-US")],
       ["IBNR (not-yet-surfaced) " + u.errors, Math.round(ibnr.ibnrCount).toLocaleString("en-US")],
-      ["<strong>Reserve to hold</strong>", "<strong>" + money(ibnr.reserve) + "</strong>"],
+      ["<strong>Reserve — tail-loaded (conservative)</strong>", "<strong>" + money(ibnr.reserve) + "</strong>"],
       ["&nbsp;", "&nbsp;"],
       ["Tail severity TVaR (per " + u.error + ")", money(sevVT.tvar)],
       ["<strong>Economic capital, aggregate (ρ = " + rho.toFixed(2) + ")</strong>", "<strong>" + moneyShort(agg.ec) + "</strong>"],
@@ -313,6 +335,39 @@
       ["&nbsp;· undiversified upper bound", moneyShort(ec.portfolio)]
     ];
     $("reserveTable").innerHTML = rows.map(function (r) {
+      return "<tr><td>" + r[0] + "</td><td class='text-end'>" + r[1] + "</td></tr>";
+    }).join("");
+  }
+
+  function renderTriangle(tri) {
+    var P = tri.P, cum = tri.cum, a, d;
+    var h = "<table class='tri'><thead><tr><th>acc\\dev</th>";
+    for (d = 0; d < P; d++) h += "<th>" + d + "</th>";
+    h += "</tr></thead><tbody>";
+    for (a = 0; a < P; a++) {
+      h += "<tr><th>" + a + "</th>";
+      for (d = 0; d < P; d++) {
+        var v = cum[a][d], latest = (a + d === P - 1);
+        h += "<td class='" + (v == null ? "fut" : "") + (latest ? " diag" : "") + "'>" + (v == null ? "·" : v) + "</td>";
+      }
+      h += "</tr>";
+    }
+    return h + "</tbody></table>";
+  }
+
+  function updateReservingDetail(book, meanSev) {
+    var cl = book.cl, bf = book.bf, boot = book.boot, u = scenario.ui;
+    $("triTable").innerHTML = renderTriangle(book.tri);
+    var rows = [
+      ["Reported to date (latest diagonal)", Math.round(cl.reportedTotal).toLocaleString("en-US") + " " + u.errors],
+      ["Chain-ladder ultimate", Math.round(cl.ultimateTotal).toLocaleString("en-US")],
+      ["Bornhuetter-Ferguson ultimate", Math.round(bf.ultimateTotal).toLocaleString("en-US")],
+      ["Bootstrap IBNR (mean ± SE)", Math.round(boot.mean).toLocaleString("en-US") + " ± " + Math.round(boot.se).toLocaleString("en-US") + " (CV " + Math.round(100 * boot.cv) + "%)"],
+      ["<strong>Best-estimate reserve</strong>", "<strong>" + money(boot.mean * meanSev) + "</strong>"],
+      ["Reserve @ 75th pctile (IFRS 17 margin)", money(boot.p75 * meanSev)],
+      ["Reserve @ 95th pctile", money(boot.p95 * meanSev)]
+    ];
+    $("reserveDetailTable").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r[0] + "</td><td class='text-end'>" + r[1] + "</td></tr>";
     }).join("");
   }
@@ -342,6 +397,17 @@
     ctrl[key].addEventListener("input", scheduleRecompute);
   });
   ctrl.cohort.addEventListener("change", recompute);
+  // Delegated handler for the regenerated "Use k̂" link.
+  document.addEventListener("click", function (e) {
+    if (e.target && e.target.id === "useKhat") {
+      e.preventDefault();
+      var kHat = cache.kHat;
+      if (kHat && isFinite(kHat.k)) {
+        var kv = Math.max(10, Math.min(8000, Math.round(kHat.k)));
+        ctrl.k.value = kv; recompute();
+      }
+    }
+  });
   $("resetBtn").addEventListener("click", function () {
     ctrl.alpha.value = 0.95; ctrl.k.value = 2500;
     ctrl.drift.value = scenario.drift; ctrl.rho.value = 0.15;

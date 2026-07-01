@@ -116,5 +116,12 @@ a { color: var(--accent-dk); }
 
 footer { border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 0.9rem; }
 
+/* Development triangle */
+.tri-wrap { border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.tri-wrap th, .tri-wrap td { border: 1px solid var(--line); padding: 3px 7px; text-align: right; }
+.tri-wrap thead th, .tri-wrap tbody th { background: var(--paper); color: var(--ink-soft); font-weight: 700; text-align: center; }
+.tri-wrap td.fut { color: #cbd5e1; background: repeating-linear-gradient(45deg,#fff,#fff 4px,#f8fafc 4px,#f8fafc 8px); }
+.tri-wrap td.diag { background: rgba(37,99,235,0.12); font-weight: 700; color: var(--accent-dk); }
+
 .badge-soft { background: rgba(37,99,235,0.10); color: var(--accent-dk); font-weight: 600; }
 .badge-danger-soft { background: rgba(185,28,28,0.10); color: var(--danger); font-weight: 600; }

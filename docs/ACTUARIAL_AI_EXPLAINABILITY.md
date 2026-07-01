@@ -226,6 +226,14 @@ process variance there is relative to between-cohort variance (in Bühlmann, `k 
 var]/Var[hypothetical means]`); larger `k` ⇒ more evidence required before a cohort is
 "believed."
 
+`k` need not be a free dial. The tool also **estimates** it from the cohorts' own variance
+components — empirical **Bühlmann-Straub** with exposure = decision count:
+`k̂ = EPV / VHM`, where `EPV` is the exposure-weighted mean process variance and `VHM` the
+between-cohort variance of the true rates (net of process noise). For the §6 book `k̂ ≈ 24` —
+far below a hand-set `k = 2500` — because the age bands are genuinely distinguishable, so their
+own experience *should* carry near-full credibility. "Use k̂" in the tool snaps the dial to the
+data-driven value; the point is that credibility is a *measurement*, not a preference.
+
 ### 5.3 Actual-to-Expected (A/E)
 
 For each cohort `c`, with `n_c` decisions and validation-time expected rate `q_c`:
@@ -250,21 +258,36 @@ TVaR (a.k.a. CTE) is the **average loss in the tail**, not merely its threshold.
 *coherent* risk measure (sub-additive — it rewards diversification), which VaR is not. The
 inequality `TVaR ≥ VaR` is an invariant the tool checks.
 
-### 5.5 IBNR reserve (development-factor analog)
+### 5.5 IBNR reserve — stochastic development triangle
 
-Let `R` be errors **reported** (adjudicated/surfaced) so far, and let `LDF ≥ 1` be a
-loss-development factor estimating how reported counts mature to ultimate (here from a
-reporting-lag pattern; in practice from a development triangle):
+Errors are *incurred but not reported* for a while: a model failure happens now but surfaces
+later (an appeal, an audit, a triggered incident). Reserving projects the **ultimate** error
+count from what has been **reported to date** and holds money for the gap.
 
-$$U = R\cdot \text{LDF}, \quad \text{IBNR}_\text{count} = U - R \ge 0,$$
-$$\underbrace{\text{Reserve}_\text{BE} = \text{IBNR}_\text{count}\cdot \bar s}_{\text{best estimate}},\quad
-\underbrace{\text{RM} = \text{IBNR}_\text{count}\cdot(\text{TVaR}^{s}_\alpha - \bar s)}_{\text{risk margin}},$$
-$$\boxed{\;\text{Reserve} = \text{Reserve}_\text{BE} + \text{RM} = \text{IBNR}_\text{count}\cdot \text{TVaR}^{s}_\alpha \ge 0\;}$$
+The simplest version applies a single loss-development factor `LDF ≥ 1` to reported errors `R`:
+`U = R·LDF`, `IBNR = U − R`. The tool reports one conservative variant of this — a
+**tail-loaded** reserve `IBNR × TVaR^s_α` (every unreported claim costed at the tail/CTE
+severity) — as an upper reference. But a single factor hides both the *pattern* and the
+*uncertainty*, so the framework does the real thing:
 
-where `TVaR^s_α` is the tail (CTE) of the **severity** distribution. The best estimate
-reserves the *expected* cost of not-yet-surfaced failures; the risk margin loads it up to a
-tail severity, reflecting that the late-reported claims may be the worse ones. The reserve is
-non-negative by construction.
+- **Development triangle.** Group errors by **accident period** (when incurred) × **development
+  lag** (periods until surfaced). The observed upper-left triangle is what's reported to date;
+  the lower-right is what we must project.
+- **Chain-ladder (CL).** Estimate age-to-age development factors `f_d` from column ratios and
+  project each accident period to ultimate. CL is unbiased but **volatile on immature periods**
+  — the latest accident periods, with only early development, can be badly over-projected.
+- **Bornhuetter-Ferguson (BF).** Blend CL with an **a-priori ultimate** — here the model's own
+  *expected* error count per period (`Σ q_c` exposure) — weighting the a-priori by the
+  still-unreported proportion `1 − 1/CDF`. BF is the standard fix for CL's immature-period
+  instability, and the tool shows the two side by side so the disagreement is visible.
+- **Over-dispersed-Poisson bootstrap** (England-Verrall). Resample the Pearson residuals of the
+  CL fit, refit, and add ODP process error to produce a full **predictive distribution** of the
+  IBNR. This yields a best estimate, a standard error, and percentiles — so the **risk margin is
+  a defensible 75th-percentile** (IFRS 17 style), not an ad-hoc severity load.
+
+Reserve dollars are the IBNR count distribution × mean severity. (Severity-tail uncertainty is
+a further refinement — §9.) The single-factor tail-loaded figure and the stochastic
+best-estimate-plus-margin bracket the reserve from above and from a principled centre.
 
 ### 5.6 Economic capital (aggregate, dependence-aware)
 
@@ -377,24 +400,34 @@ trust** — the formal version of "don't over-react to a small sample, don't ign
 
 ### 6.5 IBNR reserve and economic capital
 
-| Metric | Value |
-|---|---|
-| Reported (adjudicated) errors `R` | 621 |
-| Loss-development factor `LDF` | 1.50 |
-| Estimated ultimate errors `U` | 932 |
-| IBNR (not-yet-surfaced) errors | 311 |
-| IBNR best estimate (`311 × s̄`) | $3,553,345 |
-| Risk margin (to tail severity) | $12,109,747 |
-| **IBNR reserve to hold** | **$15,663,092** |
-| Economic capital per decision (`TVaR − E[L]`) | $16,355 |
-| **Economic capital, undiversified book** | **$163,548,783** |
+**Simple (single-factor) view.** A loss-development factor of `1.50` on the `621` adjudicated
+errors implies `932` ultimate — so **311 failures are already baked in and not yet visible.**
+Costing every one at the *tail* severity gives a deliberately conservative **tail-loaded
+reserve of ≈ $15.7M**. This is money the actuarial lens says to set aside today that no
+accuracy number, SHAP plot, or conformal set would ever surface — but it over-reserves by
+assuming every late claim is a tail claim.
 
-Only **621** errors have surfaced, but development implies **932** ultimately occurred — so
-**311 failures are already baked in and not yet visible.** The reserve for them, loaded to a
-tail severity, is **≈ $15.7M.** This is money the actuarial lens tells you to set aside today
-that *no accuracy number, SHAP plot, or conformal set would ever surface.* The economic
-capital figure is the buffer for the tail beyond the reserve (reported as an undiversified
-bound; see §9).
+**Stochastic development triangle (§5.5).** The real reserving decomposes the same lag into an
+accident × development triangle and quantifies the *uncertainty*:
+
+| Method | Ultimate | IBNR | Reserve ($) |
+|---|---:|---:|---:|
+| Reported to date | 606 | — | — |
+| Chain-ladder | 905 | 299 | — |
+| Bornhuetter-Ferguson | 870 | 264 | — |
+| **Bootstrap (ODP)** | — | **305 ± 63** (CV 21%) | **best est. $3.49M** |
+| Bootstrap 75th pctile (IFRS-17 margin) | — | 345 | **$3.94M** |
+| Bootstrap 95th pctile | — | 413 | $4.73M |
+
+The **best estimate is ≈ $3.5M**, with a **75th-percentile risk margin bringing it to ≈
+$3.9M** — a defensible, distribution-based reserve, not the $15.7M tail load. The gap between
+the two *is* the conservatism the simple method bakes in; the framework shows both and lets a
+signer choose the margin explicitly.
+
+**Economic capital (§5.6).** From the aggregate Monte-Carlo: **$1.05M independent (ρ = 0)**,
+**$6.57M at ρ = 0.15**, versus the **$163.55M** undiversified `N·(TVaR − E[L])` upper bound —
+the buffer for the tail beyond the reserve, and its honest dependence on the systemic-
+correlation assumption.
 
 ### 6.6 What the actuarial lens saw that the software lens could not
 
@@ -620,10 +653,14 @@ weak. It is.
 
 1. **Ground-truth lag is the load-bearing assumption.** IBNR development requires that
    surfaced errors are informative about unsurfaced ones — i.e. a stable, estimable reporting
-   pattern. If ground truth is *never* observed for some decisions (the denied patient who
-   never appeals), the development factor is itself a modeling choice, and the reserve is only
-   as good as that triangle. This is a real assumption, openly the same one P&C reserving has
-   always made.
+   pattern. The tool now models this properly — a development triangle with chain-ladder,
+   Bornhuetter-Ferguson, and an ODP bootstrap that quantifies the reserve *distribution* (§5.5)
+   — rather than a single factor. Two honest gaps remain: (a) if ground truth is *never*
+   observed for some decisions (the denied patient who never appeals, the declined applicant who
+   never gets to default), the reporting pattern is a modeling choice and **reject-inference /
+   censoring** is needed — the natural next extension; and (b) the bootstrap captures *count*
+   uncertainty but the reserve still multiplies by a fixed mean **severity**, so severity-tail
+   uncertainty (a heavy-tailed/EVT severity model) is not yet propagated.
 
 2. **Exchangeability / stationarity.** A/E, credibility, and reserving all assume cohorts are
    reasonably exchangeable over the measurement window. Under fast distribution shift the
