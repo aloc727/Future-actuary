@@ -441,6 +441,43 @@
     };
   }
 
+  // ---- 10. Reject inference / censoring ----------------------------------
+  // The true outcome is observed only for the `observed` decisions; censoring
+  // is informative (rises with the model score, which correlates with error),
+  // so the NAIVE observed error rate is biased low. Reject inference fits
+  // P(error | score) on the observed decisions (score bins) and IMPUTES the
+  // censored ones, recovering an estimate near the true rate — as long as
+  // censoring is ignorable given the score (MAR); residual MNAR is a limit.
+  function rejectInference(records, bins) {
+    var B = bins || 10, i, r;
+    var binN = new Array(B).fill(0), binErr = new Array(B).fill(0);
+    var n = records.length, obs = 0, obsErr = 0, trueErr = 0;
+    for (i = 0; i < n; i++) {
+      r = records[i];
+      trueErr += r.error;
+      if (r.observed) {
+        obs++; obsErr += r.error;
+        var b = Math.min(B - 1, Math.max(0, Math.floor(r.score * B)));
+        binN[b]++; binErr[b] += r.error;
+      }
+    }
+    var rate = binN.map(function (c, j) { return c > 0 ? binErr[j] / c : 0; });
+    var overall = obs > 0 ? obsErr / obs : 0;
+    var corrected = obsErr;
+    for (i = 0; i < n; i++) {
+      r = records[i];
+      if (!r.observed) {
+        var bb = Math.min(B - 1, Math.max(0, Math.floor(r.score * B)));
+        corrected += binN[bb] > 0 ? rate[bb] : overall;
+      }
+    }
+    return {
+      n: n, observed: obs, censored: n - obs,
+      naiveErrors: obsErr, correctedErrors: corrected,
+      naiveRate: overall, correctedRate: corrected / n, trueRate: trueErr / n
+    };
+  }
+
   // Empirical Bühlmann (Bühlmann-Straub with exposure = decision count):
   // estimate the credibility constant k = EPV / VHM from the cohorts' variance
   // components, instead of leaving k a free dial. cohorts: [{ n, errors }].
@@ -469,6 +506,7 @@
     fitGPD: fitGPD,
     gpdTailMeasures: gpdTailMeasures,
     reserveDollarSim: reserveDollarSim,
+    rejectInference: rejectInference,
     buhlmannStraubK: buhlmannStraubK,
     frequencySeverity: frequencySeverity,
     buhlmannCredibility: buhlmannCredibility,

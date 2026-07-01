@@ -213,6 +213,33 @@
     </div>
   </div>
 
+  <!-- ROW 4: censoring / reject inference -->
+  <div class="row g-4 mb-4">
+    <div class="col-12">
+      <div class="panel h-100">
+        <div class="panel-head d-flex justify-content-between align-items-center">
+          <h5>6 · Ground-truth censoring &amp; reject inference</h5>
+          <span class="badge badge-danger-soft rounded-pill">corrects selection bias</span>
+        </div>
+        <div class="row g-3 p-3 pt-2 align-items-center">
+          <div class="col-lg-6">
+            <div class="chart-wrap" style="height:240px"><canvas id="censChart" role="img" aria-label="Error rate under naive observed, reject-inference corrected, and true ground truth"></canvas></div>
+          </div>
+          <div class="col-lg-6">
+            <table class="table table-sm align-middle mb-0"><tbody id="censTable"></tbody></table>
+          </div>
+        </div>
+        <p class="caption"><span class="tag">What this means:</span>
+          The true outcome is only observed for some decisions — a confidently-denied case is rarely appealed, a
+          declined applicant never gets to default — and that censoring is <strong>informative</strong> (it rises with the
+          model's score, which tracks error), so the <strong>naive observed rate is biased low</strong>. <strong>Reject
+          inference</strong> fits P(error | score) on the observed decisions and imputes the censored ones, recovering an
+          estimate near the truth. It works because censoring is (mostly) explained by the score; whatever remains
+          purely unobserved (MNAR) is the residual gap — see paper §9.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="alert alert-light border d-flex align-items-start gap-2" role="alert">
     <span style="font-size:1.3rem">🔍</span>
     <div>
