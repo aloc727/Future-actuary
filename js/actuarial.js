@@ -371,7 +371,73 @@
     var se = Math.sqrt(variance / Math.max(1, B - 1));
     return {
       mean: meanI, se: se, cv: meanI > 0 ? se / meanI : 0,
-      p75: quantile(samples, 0.75), p95: quantile(samples, 0.95), B: B, phi: phi
+      p75: quantile(samples, 0.75), p95: quantile(samples, 0.95), B: B, phi: phi,
+      samples: samples
+    };
+  }
+
+  // ---- 9. Heavy-tail severity: peaks-over-threshold GPD -------------------
+  // Fit a Generalized Pareto Distribution to severity exceedances over a high
+  // threshold u (method of moments, Hosking-Wallis). The shape ξ is the tail
+  // index: ξ ≈ 0 is exponential-tailed (e.g. lognormal body), ξ > 0 is heavy
+  // (power-law) — the regime where a mean-severity reserve badly understates.
+  function fitGPD(values, thresholdQuantile) {
+    var thq = thresholdQuantile != null ? thresholdQuantile : 0.90;
+    var u = quantile(values, thq), ex = [], i;
+    for (i = 0; i < values.length; i++) if (values[i] > u) ex.push(values[i] - u);
+    var nEx = ex.length, n = values.length;
+    if (nEx < 10) return { u: u, xi: 0, beta: Math.max(1, mean(ex)), nExcess: nEx, tailProb: nEx / n, n: n, valid: false };
+    var m = mean(ex), s2 = 0;
+    for (i = 0; i < nEx; i++) s2 += (ex[i] - m) * (ex[i] - m);
+    s2 = s2 / (nEx - 1);
+    var xi = 0.5 * (1 - (m * m) / s2);
+    var beta = 0.5 * m * ((m * m) / s2 + 1);
+    if (!isFinite(beta) || beta <= 0) beta = m;
+    return { u: u, xi: xi, beta: beta, nExcess: nEx, tailProb: nEx / n, n: n, valid: true };
+  }
+
+  // GPD-based severity VaR/TVaR at overall level alpha (POT closed form).
+  function gpdTailMeasures(fit, alpha) {
+    if (!fit.valid || alpha <= 1 - fit.tailProb) return { var: null, tvar: null };
+    var xi = fit.xi, beta = fit.beta, u = fit.u;
+    var v = u + (Math.abs(xi) < 1e-6
+      ? beta * Math.log(fit.tailProb / (1 - alpha))
+      : (beta / xi) * (Math.pow(fit.tailProb / (1 - alpha), xi) - 1));
+    var tvar = xi < 1 ? v / (1 - xi) + (beta - xi * u) / (1 - xi) : v;
+    return { var: v, tvar: tvar };
+  }
+
+  function gpdSample(rng, xi, beta) {
+    var U = 1 - rng();
+    return Math.abs(xi) < 1e-6 ? -beta * Math.log(U) : (beta / xi) * (Math.pow(U, -xi) - 1);
+  }
+
+  // Severity-AWARE reserve: take the bootstrap IBNR COUNT samples and, for each,
+  // draw that many per-claim severities from a spliced distribution (empirical
+  // body below the threshold u, GPD tail above it). This propagates severity
+  // variability and tail risk into the reserve $ distribution — the count
+  // bootstrap alone multiplied by a fixed mean severity did not.
+  function reserveDollarSim(countSamples, severities, fit, opts) {
+    opts = opts || {};
+    var seed = opts.seed || 424242;
+    var rng = mulberry32(seed >>> 0);
+    var body = [];
+    for (var i = 0; i < severities.length; i++) if (severities[i] <= fit.u) body.push(severities[i]);
+    if (!body.length) body = severities;
+    var m = body.length;
+    var dollars = new Array(countSamples.length);
+    for (var b = 0; b < countSamples.length; b++) {
+      var c = Math.round(countSamples[b]), tot = 0;
+      for (var j = 0; j < c; j++) {
+        tot += rng() < fit.tailProb ? fit.u + gpdSample(rng, fit.xi, fit.beta) : body[(m * rng()) | 0];
+      }
+      dollars[b] = tot;
+    }
+    var mn = mean(dollars), variance = 0;
+    for (b = 0; b < dollars.length; b++) variance += Math.pow(dollars[b] - mn, 2);
+    return {
+      mean: mn, se: Math.sqrt(variance / Math.max(1, dollars.length - 1)),
+      p75: quantile(dollars, 0.75), p95: quantile(dollars, 0.95), p99: quantile(dollars, 0.99)
     };
   }
 
@@ -400,6 +466,9 @@
     chainLadder: chainLadder,
     bornhuetterFerguson: bornhuetterFerguson,
     bootstrapReserve: bootstrapReserve,
+    fitGPD: fitGPD,
+    gpdTailMeasures: gpdTailMeasures,
+    reserveDollarSim: reserveDollarSim,
     buhlmannStraubK: buhlmannStraubK,
     frequencySeverity: frequencySeverity,
     buhlmannCredibility: buhlmannCredibility,

@@ -50,11 +50,13 @@
       recs.forEach(function (r) { apriori[r.accPeriod] += r.expectedRate; });
       var bf = A.bornhuetterFerguson(tri, cl, apriori);
       var boot = A.bootstrapReserve(tri, cl, { B: 1200, seed: simSeed() });
+      var gpd = A.fitGPD(fs.severities, 0.90);
+      var reserveDollar = A.reserveDollarSim(boot.samples, fs.severities, gpd, { seed: (simSeed() ^ 0x5bd1e995) >>> 0 });
       var surfaced = recs.reduce(function (s, r) { return s + (r.surfaced || 0); }, 0);
       var kcoh = {};
       recs.forEach(function (r) { (kcoh[r.cohort] = kcoh[r.cohort] || { n: 0, errors: 0 }); kcoh[r.cohort].n++; kcoh[r.cohort].errors += r.error; });
       var kHat = A.buhlmannStraubK(Object.keys(kcoh).map(function (c) { return kcoh[c]; }));
-      cache = { key: key, records: recs, fs: fs, tri: tri, cl: cl, bf: bf, boot: boot, surfaced: surfaced, kHat: kHat };
+      cache = { key: key, records: recs, fs: fs, tri: tri, cl: cl, bf: bf, boot: boot, gpd: gpd, reserveDollar: reserveDollar, surfaced: surfaced, kHat: kHat };
     }
     return cache;
   }
@@ -356,16 +358,21 @@
   }
 
   function updateReservingDetail(book, meanSev) {
-    var cl = book.cl, bf = book.bf, boot = book.boot, u = scenario.ui;
+    var cl = book.cl, bf = book.bf, boot = book.boot, rd = book.reserveDollar, gpd = book.gpd, u = scenario.ui;
     $("triTable").innerHTML = renderTriangle(book.tri);
+    var gTvar = A.gpdTailMeasures(gpd, 0.95).tvar;
+    var empTvar = A.varTvar(book.fs.severities, 0.95).tvar;
     var rows = [
       ["Reported to date (latest diagonal)", Math.round(cl.reportedTotal).toLocaleString("en-US") + " " + u.errors],
       ["Chain-ladder ultimate", Math.round(cl.ultimateTotal).toLocaleString("en-US")],
       ["Bornhuetter-Ferguson ultimate", Math.round(bf.ultimateTotal).toLocaleString("en-US")],
       ["Bootstrap IBNR (mean ± SE)", Math.round(boot.mean).toLocaleString("en-US") + " ± " + Math.round(boot.se).toLocaleString("en-US") + " (CV " + Math.round(100 * boot.cv) + "%)"],
-      ["<strong>Best-estimate reserve</strong>", "<strong>" + money(boot.mean * meanSev) + "</strong>"],
-      ["Reserve @ 75th pctile (IFRS 17 margin)", money(boot.p75 * meanSev)],
-      ["Reserve @ 95th pctile", money(boot.p95 * meanSev)]
+      ["Severity tail: GPD shape ξ̂", gpd.xi.toFixed(2) + (gpd.xi > 0.05 ? " (heavy)" : " (≈ exponential)")],
+      ["&nbsp;· severity TVaR₉₅ (empirical / GPD)", money(empTvar) + " / " + (gTvar ? money(gTvar) : "—")],
+      ["<strong>Best-estimate reserve (severity-aware)</strong>", "<strong>" + money(rd.mean) + "</strong>"],
+      ["Reserve @ 75th pctile (IFRS 17 margin)", money(rd.p75)],
+      ["Reserve @ 95th pctile", money(rd.p95)],
+      ["Reserve @ 99th pctile", money(rd.p99)]
     ];
     $("reserveDetailTable").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r[0] + "</td><td class='text-end'>" + r[1] + "</td></tr>";
