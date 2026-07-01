@@ -2,12 +2,11 @@
  * actuarial.js — Pure, dependency-free actuarial measurement functions.
  *
  * These are the "AI Risk Lens" primitives. Each function takes plain numbers
- * or arrays and returns plain objects. No DOM, no globals, no randomness:
- * the same inputs always produce the same outputs, so the interactive tool
- * and the framework paper report identical numbers.
+ * or arrays and returns plain objects. No DOM. The stochastic pieces
+ * (aggregateLossSim) take an explicit seed, so results are reproducible and
+ * the interactive tool and the framework paper report identical numbers.
  *
- * Works in the browser (attaches to window.Actuarial) and in Node
- * (module.exports) so the verification harness can re-derive every figure.
+ * Works in the browser (window.Actuarial) and in Node (module.exports).
  */
 (function (global) {
   "use strict";
@@ -28,7 +27,6 @@
   }
 
   // Type-7 (R default) linear-interpolation quantile on an UNSORTED array.
-  // p in [0,1]. We sort a copy so callers don't have to.
   function quantile(xs, p) {
     if (!xs.length) return 0;
     var a = xs.slice().sort(function (x, y) { return x - y; });
@@ -40,13 +38,43 @@
     return a[lo] + (h - lo) * (a[hi] - a[lo]);
   }
 
+  // ---- seeded RNG + samplers (used only by aggregateLossSim) --------------
+
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function randNormal(rng) {
+    var u = 1 - rng(), v = 1 - rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  // Poisson: Knuth for small lambda, normal approximation for large.
+  function poissonSample(rng, lambda) {
+    if (lambda <= 0) return 0;
+    if (lambda < 30) {
+      var L = Math.exp(-lambda), k = 0, p = 1;
+      do { k++; p *= rng(); } while (p > L);
+      return k - 1;
+    }
+    return Math.max(0, Math.round(lambda + Math.sqrt(lambda) * randNormal(rng)));
+  }
+  // Gamma(shape a >= 1, scale 1) via Marsaglia-Tsang.
+  function gammaSample(rng, a) {
+    var d = a - 1 / 3, c = 1 / Math.sqrt(9 * d), x, v, u;
+    for (;;) {
+      do { x = randNormal(rng); v = 1 + c * x; } while (v <= 0);
+      v = v * v * v; u = rng();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+
   // ---- 1. Frequency x Severity loss model --------------------------------
-  // Instead of a single accuracy number, decompose risk into how OFTEN the
-  // model errs (frequency) x how BADLY each error hurts (severity), and roll
-  // them up into a per-decision expected loss and a full loss distribution.
-  //
-  // records: array of { error: 0|1, severity: number }  (severity = dollar
-  // loss GIVEN an error; the per-decision loss is error ? severity : 0).
   function frequencySeverity(records) {
     var n = records.length;
     var losses = new Array(n);
@@ -62,41 +90,30 @@
         losses[i] = 0;
       }
     }
-    var frequency = n ? errorCount / n : 0;       // P(error)
-    var meanSeverity = mean(severities);          // E[loss | error]
-    var expectedLoss = mean(losses);              // E[loss] = freq * meanSev
+    var frequency = n ? errorCount / n : 0;
+    var meanSeverity = mean(severities);
+    var expectedLoss = mean(losses);
     return {
-      n: n,
-      errorCount: errorCount,
-      frequency: frequency,
-      meanSeverity: meanSeverity,
-      expectedLoss: expectedLoss,
-      losses: losses,
-      severities: severities
+      n: n, errorCount: errorCount, frequency: frequency,
+      meanSeverity: meanSeverity, expectedLoss: expectedLoss,
+      losses: losses, severities: severities
     };
   }
 
   // ---- 2. Buhlmann / limited-fluctuation credibility ---------------------
-  // How much weight does THIS cohort's own experience deserve versus the
-  // portfolio base rate? Z = n / (n + k). The credibility-weighted estimate
-  // blends the cohort's observed rate with the prior:
-  //     est = Z * observed + (1 - Z) * prior
-  // Z rises monotonically toward 1 as experience n grows.
   function buhlmannCredibility(n, observedRate, priorRate, k) {
     var Z = n / (n + k);
     var estimate = Z * observedRate + (1 - Z) * priorRate;
     return { n: n, k: k, Z: Z, observedRate: observedRate, priorRate: priorRate, estimate: estimate };
   }
 
-  // ---- 3. Actual-to-Expected (A/E) experience study ----------------------
-  // Cohort-level drift / miscalibration monitoring. For each cohort:
-  //     A/E = actual errors / expected errors
-  // where expected = cohort exposure x the validation-time expected rate.
-  // A/E ~ 1.0 means the model still behaves as validated; A/E materially
-  // above 1.0 flags a cohort where reality has drifted from the model.
-  //
-  // records: [{ cohort, error, expectedRate }]
-  // flagThreshold: relative departure from 1.0 that we call "material".
+  // ---- 3. Actual-to-Expected (A/E) with control limits -------------------
+  // For each cohort, A/E = actual / expected. Under the null (no drift), the
+  // actual count ~ Poisson(expected), so SE(A/E) ≈ 1/sqrt(expected). A cohort
+  // is FLAGGED only when its departure is BOTH statistically significant
+  // (outside the ~95% Poisson control band, |z| > 1.96) AND material
+  // (|A/E − 1| > flagThreshold). This stops small, low-exposure cohorts from
+  // tripping on noise — consistent with the credibility view.
   function actualToExpected(records, flagThreshold) {
     if (flagThreshold == null) flagThreshold = 0.10;
     var byCohort = {};
@@ -111,87 +128,115 @@
     var rows = Object.keys(byCohort).map(function (key) {
       var c = byCohort[key];
       c.ae = c.expected > 0 ? c.actual / c.expected : 0;
-      c.flag = Math.abs(c.ae - 1) > flagThreshold;
+      var se = c.expected > 0 ? 1 / Math.sqrt(c.expected) : 0; // SE of the A/E ratio
+      c.se = se;
+      c.ciLow = Math.max(0, 1 - 1.96 * se);
+      c.ciHigh = 1 + 1.96 * se;
+      c.z = c.expected > 0 ? (c.actual - c.expected) / Math.sqrt(c.expected) : 0;
+      c.material = Math.abs(c.ae - 1) > flagThreshold;
+      c.significant = c.expected > 0 && Math.abs(c.z) > 1.96;
+      c.flag = c.significant && c.material;
       return c;
     });
-    // Portfolio-level A/E
     var totA = sum(rows.map(function (r) { return r.actual; }));
     var totE = sum(rows.map(function (r) { return r.expected; }));
     return { rows: rows, portfolioAE: totE > 0 ? totA / totE : 0, totalActual: totA, totalExpected: totE };
   }
 
   // ---- 4. VaR / TVaR (CTE) -----------------------------------------------
-  // Size the catastrophic tail that a single "95% confidence" number throws
-  // away. VaR_alpha = the alpha-quantile of the per-decision loss
-  // distribution. TVaR_alpha (a.k.a. CTE) = the MEAN loss in the tail at or
-  // beyond VaR_alpha — the average cost of a bad day, not just its threshold.
-  // Invariant: TVaR_alpha >= VaR_alpha always.
   function varTvar(losses, alpha) {
     var v = quantile(losses, alpha);
     var tail = [];
-    for (var i = 0; i < losses.length; i++) {
-      if (losses[i] >= v) tail.push(losses[i]);
-    }
+    for (var i = 0; i < losses.length; i++) if (losses[i] >= v) tail.push(losses[i]);
     var t = tail.length ? mean(tail) : v;
-    if (t < v) t = v; // numerical guard for the invariant
+    if (t < v) t = v;
     return { alpha: alpha, var: v, tvar: t, tailCount: tail.length };
   }
 
   // ---- 5. IBNR reserve (development-factor analog) -----------------------
-  // "Incurred but not reported" MODEL FAILURES. Ground truth lags: many
-  // errors are already baked in but not yet surfaced (appeals, audits,
-  // delayed outcomes). Apply a loss-development factor (LDF) to the errors
-  // reported so far to estimate the ULTIMATE error count, then reserve the
-  // gap. A risk margin loads the best estimate up to a tail (TVaR) severity.
-  //
-  //   ultimateCount = reportedCount * ldf
-  //   ibnrCount     = ultimateCount - reportedCount      (>= 0 since ldf>=1)
-  //   bestEstimate  = ibnrCount * meanSeverity
-  //   riskMargin    = ibnrCount * (tvarSeverity - meanSeverity)
-  //   reserve       = bestEstimate + riskMargin = ibnrCount * tvarSeverity
   function ibnrReserve(reportedCount, ldf, meanSeverity, tvarSeverity) {
-    if (ldf < 1) ldf = 1; // development factors are >= 1 by construction
+    if (ldf < 1) ldf = 1;
     var ultimateCount = reportedCount * ldf;
     var ibnrCount = Math.max(0, ultimateCount - reportedCount);
     var bestEstimate = ibnrCount * meanSeverity;
     var riskMargin = ibnrCount * Math.max(0, tvarSeverity - meanSeverity);
     var reserve = Math.max(0, bestEstimate + riskMargin);
     return {
-      reportedCount: reportedCount,
-      ldf: ldf,
-      ultimateCount: ultimateCount,
-      ibnrCount: ibnrCount,
-      bestEstimate: bestEstimate,
-      riskMargin: riskMargin,
-      reserve: reserve
+      reportedCount: reportedCount, ldf: ldf, ultimateCount: ultimateCount,
+      ibnrCount: ibnrCount, bestEstimate: bestEstimate, riskMargin: riskMargin, reserve: reserve
     };
   }
 
-  // ---- 6. Economic capital -----------------------------------------------
-  // The buffer to hold against AI tail risk, over and above the loss you
-  // already expect: EC = TVaR_alpha - expected loss. Stated per decision and
-  // scaled to the whole book of `exposure` decisions.
+  // ---- 6. Economic capital (per-decision, undiversified) -----------------
+  // The simple version: EC = TVaR_alpha - E[L], scaled to the book. Scaling a
+  // per-decision tail by N assumes perfectly dependent decisions, so the
+  // portfolio figure is a conservative UPPER BOUND. See aggregateEconomicCapital
+  // for the diversified, dependence-aware version.
   function economicCapital(tvar, expectedLoss, exposure) {
     var perDecision = Math.max(0, tvar - expectedLoss);
     return {
-      perDecision: perDecision,
-      portfolio: perDecision * (exposure || 1),
-      tvar: tvar,
-      expectedLoss: expectedLoss,
-      exposure: exposure || 1
+      perDecision: perDecision, portfolio: perDecision * (exposure || 1),
+      tvar: tvar, expectedLoss: expectedLoss, exposure: exposure || 1
+    };
+  }
+
+  // ---- 7. Aggregate collective-risk model (dependence-aware capital) ------
+  // Monte-Carlo of the AGGREGATE annual loss S = sum of per-decision losses,
+  // built as a mixed-Poisson compound model with a shared systemic factor:
+  //
+  //   G ~ Gamma(mean 1, variance g)     [systemic / common-shock multiplier]
+  //   M | G ~ Poisson(frequency * exposure * G)   [correlated error count]
+  //   S = sum of M severities drawn from the empirical severity distribution
+  //
+  // rho in [0,1] maps to the systemic variance g = rho * 0.5:
+  //   rho = 0  -> G ≡ 1 -> independent errors -> maximal diversification
+  //   rho > 0  -> common-cause failures cluster -> fatter aggregate tail
+  //
+  // Economic capital is then TVaR_alpha(S) - E[S], read from the AGGREGATE
+  // distribution (not a per-decision tail scaled by N). Seeded => reproducible.
+  function aggregateLossSim(severities, frequency, exposure, opts) {
+    opts = opts || {};
+    var alpha = opts.alpha != null ? opts.alpha : 0.95;
+    var rho = opts.rho != null ? opts.rho : 0;
+    var sims = opts.sims != null ? opts.sims : 2000;
+    var seed = opts.seed != null ? opts.seed : 12345;
+    var m = severities.length;
+    if (!m || exposure <= 0 || frequency <= 0) {
+      return { mean: 0, var: 0, tvar: 0, ec: 0, ecPerDecision: 0, rho: rho, sims: sims };
+    }
+    var rng = mulberry32(seed >>> 0);
+    var g = rho * 0.5;                 // systemic variance
+    var lambda0 = frequency * exposure;
+    var S = new Array(sims);
+    for (var s = 0; s < sims; s++) {
+      var G = g > 0 ? gammaSample(rng, 1 / g) * g : 1; // mean 1, variance g
+      var M = poissonSample(rng, lambda0 * G);
+      var tot = 0;
+      for (var j = 0; j < M; j++) tot += severities[(m * rng()) | 0];
+      S[s] = tot;
+    }
+    var meanS = mean(S);
+    var v = quantile(S, alpha);
+    var tail = [];
+    for (var t = 0; t < sims; t++) if (S[t] >= v) tail.push(S[t]);
+    var tvar = tail.length ? mean(tail) : v;
+    if (tvar < v) tvar = v;
+    var ec = Math.max(0, tvar - meanS);
+    return {
+      mean: meanS, var: v, tvar: tvar, ec: ec, ecPerDecision: ec / exposure,
+      meanPerDecision: meanS / exposure, rho: rho, g: g, sims: sims
     };
   }
 
   var api = {
-    mean: mean,
-    sum: sum,
-    quantile: quantile,
+    mean: mean, sum: sum, quantile: quantile,
     frequencySeverity: frequencySeverity,
     buhlmannCredibility: buhlmannCredibility,
     actualToExpected: actualToExpected,
     varTvar: varTvar,
     ibnrReserve: ibnrReserve,
-    economicCapital: economicCapital
+    economicCapital: economicCapital,
+    aggregateLossSim: aggregateLossSim
   };
 
   global.Actuarial = api;

@@ -232,9 +232,14 @@ For each cohort `c`, with `n_c` decisions and validation-time expected rate `q_c
 
 $$A_c = \sum_{i: c(i)=c} e_i, \qquad E_c = n_c\, q_c, \qquad (A/E)_c = \frac{A_c}{E_c}.$$
 
-`(A/E)_c ≈ 1` means the model still behaves as validated for that cohort. A material
-departure (e.g. `|A/E − 1| > 10%`, optionally gated by a credibility/`χ²` test so small
-cohorts don't trip on noise) flags **drift or miscalibration**.
+`(A/E)_c ≈ 1` means the model still behaves as validated for that cohort. Rather than a flat
+threshold, the tool flags a cohort only when its departure is **both statistically
+significant and material**. Under the null (no drift), `A_c ~ Poisson(E_c)`, so the standard
+error of the ratio is `SE = 1/√E_c` and the 95% **control band** is `1 ± 1.96/√E_c`; a cohort
+is flagged when `|z| = |A_c − E_c|/√E_c > 1.96` **and** `|A/E − 1| > 10%`. This ties directly
+to the credibility view (§5.2): a small, low-exposure cohort has a wide band and does not trip
+on noise, while a large cohort is held to a tight one. The band is drawn as whiskers on the
+A/E chart.
 
 ### 5.4 VaR and TVaR (CTE)
 
@@ -261,13 +266,35 @@ reserves the *expected* cost of not-yet-surfaced failures; the risk margin loads
 tail severity, reflecting that the late-reported claims may be the worse ones. The reserve is
 non-negative by construction.
 
-### 5.6 Economic capital
+### 5.6 Economic capital (aggregate, dependence-aware)
 
-$$\text{EC}_\alpha = \text{TVaR}_\alpha - \mathbb{E}[L] \ge 0,$$
+Economic capital is the buffer above expected loss needed to survive a tail outcome:
 
-the buffer above expected loss needed to survive a tail outcome. Per-decision EC scales to a
-book of `N` decisions; we report `N·EC` as an **undiversified upper bound** (it ignores the
-diversification a coherent aggregate model would credit — see §9).
+$$\text{EC}_\alpha = \text{TVaR}_\alpha(S) - \mathbb{E}[S],$$
+
+where `S` is the **aggregate** loss of the whole book. The naive shortcut — take the
+per-decision `TVaR_α − E[L]` and multiply by `N` — assumes *perfectly dependent* decisions and
+badly overstates capital; the equally-naive independence assumption (CLT) badly understates
+it. Neither is right, so the tool builds the aggregate distribution explicitly with a
+**mixed-Poisson compound model carrying a shared systemic factor** `G`:
+
+$$G \sim \text{Gamma}(\text{mean }1,\ \text{var }g),\quad
+M \mid G \sim \text{Poisson}(f\,N\,G),\quad
+S = \sum_{j=1}^{M} X_j,$$
+
+with severities `X_j` drawn from the empirical severity distribution and `g = ρ·0.5`. The
+**systemic-correlation parameter** `ρ ∈ [0,1]` (a slider in the tool) controls common-cause
+clustering — the reality of model risk, where one bad deploy or drifted input corrupts many
+decisions at once. `ρ = 0` recovers near-independence (maximal diversification); raising `ρ`
+fattens the aggregate tail toward the undiversified bound. `EC_α = TVaR_α(S) − E[S]` is read
+off a seeded Monte-Carlo of `S`, so it is reproducible.
+
+For the §6 book (`α = 0.95`), this yields economic capital of **≈ $1.05M independent
+(ρ = 0)**, **≈ $6.57M at ρ = 0.15** (a moderate systemic assumption), and **≈ $15.0M at
+ρ = 0.6** — all far below the **$163.55M** undiversified `N·(TVaR − E[L])` bound, which the
+tool still reports as a conservative reference. The gap between these numbers *is* the
+diversification, and the honest capital figure depends entirely on the systemic-correlation
+assumption — which the framework now makes explicit and tunable rather than hiding.
 
 ---
 
@@ -555,8 +582,9 @@ accompanies an insurer's reserves:
 >    system's central tendency (`E[L] = $1,049/decision`);
 > 2. the **reserve** of `$15.7M` makes reasonable provision for incurred-but-not-reported
 >    model failures, including a risk margin to a `TVaR₀.₉₅` severity basis;
-> 3. the **economic capital** of `$16,355/decision` is adequate for tail risk at the stated
->    `α = 0.95`, subject to the diversification limitation noted;
+> 3. the **aggregate economic capital** of `$6.57M` at a systemic-correlation assumption of
+>    `ρ = 0.15` (with `$163.55M` as the undiversified upper bound) is adequate for tail risk at
+>    the stated `α = 0.95`; the figure is sensitive to `ρ`, which is disclosed;
 > 4. **Actual-to-Expected monitoring** is in place; as of this opinion the cohorts *75–84*
 >    and *85+* exceed the materiality threshold (`A/E = 1.39, 1.40`) and are flagged for
 >    re-pricing and remediation.
@@ -613,18 +641,26 @@ weak. It is.
 
 4. **Cohort-design risk.** A/E and credibility are only as good as the rating cells. Too
    coarse and drift hides inside an aggregate; too fine and every cell is low-credibility
-   noise. Cohort choice can also *encode* the very bias the regulation polices — the same
-   double-edge actuaries already manage in rating.
+   noise. The tool mitigates the small-cell problem with **Poisson 95% control limits** (a
+   cohort must be significant *and* material to flag, §5.3), but cohort choice can still
+   *encode* the very bias the regulation polices — the same double-edge actuaries already
+   manage in rating. Risk-adjusting the "expected" basis so drift is not confounded with
+   case-mix is a further refinement.
 
 5. **Severity estimation is hard and political.** Pricing the dollar cost of a wrongful
    denial (harm, appeal cost, litigation, reputational loss) involves contestable choices.
    The framework makes those choices *explicit and auditable* rather than eliminating them —
    which is an improvement over hiding them, not a claim to objectivity.
 
-6. **The portfolio economic-capital figure is an undiversified bound.** Scaling per-decision
-   `TVaR` by `N` assumes perfectly dependent decisions. A coherent aggregate-loss model (TVaR
-   is sub-additive) would credit diversification and produce a smaller, more accurate capital
-   number. We report the conservative bound deliberately and flag it.
+6. **Economic capital now uses an aggregate model, but the dependence parameter is a
+   judgment.** Earlier versions only reported the undiversified `N·(TVaR − E[L])` bound. The
+   tool now builds the aggregate loss distribution with a shared systemic factor (§5.6) and
+   reads `TVaR_α(S) − E[S]` off it, with the undiversified figure retained as a conservative
+   reference. The residual limitation is honest: the capital number is highly sensitive to the
+   **systemic-correlation `ρ`**, which is an assumption, not an observable — and the synthetic
+   book's *base* data is still iid, so `ρ` is imposed at the aggregate layer rather than
+   estimated from correlated production incidents. Calibrating `ρ` from real common-cause
+   failure data is the natural next step.
 
 7. **Not a substitute for causal/fairness analysis.** The framework quantifies and reserves
    risk; it does not by itself establish *why* a cohort drifts or whether a disparity is
