@@ -328,6 +328,30 @@ tool still reports as a conservative reference. The gap between these numbers *i
 diversification, and the honest capital figure depends entirely on the systemic-correlation
 assumption — which the framework now makes explicit and tunable rather than hiding.
 
+### 5.7 Ground-truth censoring and reject inference
+
+Every metric so far assumes we eventually *see* whether a decision was an error. Often we do
+not: a confidently-denied prior-auth is rarely appealed, a **declined loan never gets to
+default**, a blocked transaction is never confirmed as fraud. Worse, this censoring is
+**informative** — it rises with the model's confidence, which itself tracks error propensity —
+so the **naive observed error rate is biased downward** (the very cases most likely to be
+wrong are the least likely to be observed). Reporting the observed rate as if it were the truth
+is the selection-bias trap that makes a bad model look acceptable.
+
+**Reject inference** is the actuarial/credit-risk remedy. The model's **score is available for
+every decision**, censored or not. Fit `P(error | score)` on the *observed* decisions (score
+bins), then **impute** the expected errors of the censored ones:
+
+$$\hat E_\text{true} = \underbrace{\textstyle\sum_{\text{observed}} e_i}_{\text{seen}}
+ + \underbrace{\textstyle\sum_{\text{censored}} \hat P(\text{error}\mid \text{score}_i)}_{\text{imputed}}.$$
+
+This is unbiased when censoring is ignorable *given the score* (MAR); whatever depends on the
+outcome beyond the score (MNAR) is the irreducible residual. In the worked example the naive
+observed rate reads **7.1%**, but reject inference recovers **8.6%** against a true **9.2%** —
+closing most of the gap the naive number hides. The lesson is a governance one: *never quote
+the observed error rate of a system that suppresses its own ground truth without a
+reject-inference correction and an MNAR caveat.*
+
 ---
 
 ## 6. Worked example: a Humana-style prior-authorization AI
@@ -670,8 +694,11 @@ weak. It is.
    Bornhuetter-Ferguson, and an ODP bootstrap that quantifies the reserve *distribution* (§5.5)
    — rather than a single factor. Two honest gaps remain: (a) if ground truth is *never*
    observed for some decisions (the denied patient who never appeals, the declined applicant who
-   never gets to default), the reporting pattern is a modeling choice and **reject-inference /
-   censoring** is needed — the natural next extension; and (b) severity-tail uncertainty is now
+   never gets to default), the tool now applies **reject inference** — imputing censored outcomes
+   from `P(error | score)` (§5.7) — which recovers most of the bias when censoring is ignorable
+   given the score, though whatever is missing-not-at-random (MNAR) beyond the score is
+   irreducible without stronger assumptions or a controlled hold-out; and (b) severity-tail
+   uncertainty is now
    **propagated** — each bootstrap claim is costed from the empirical body spliced with a fitted
    **GPD tail** (§5.5) — but the tail index `ξ̂` is itself estimated from limited exceedances, so
    the tail of the tail remains the least certain part of any reserve.

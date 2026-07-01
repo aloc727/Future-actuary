@@ -421,6 +421,21 @@
       records[j].devLag = lag;
       records[j].surfaced = (records[j].error && acc + lag <= P - 1) ? 1 : 0;
     }
+
+    // Third, INDEPENDENT pass: informative CENSORING. In production the true
+    // outcome is observed only for some decisions — a confidently-denied case
+    // (high score) is less likely to be appealed/adjudicated, so we never learn
+    // if it was wrong. Censoring probability rises with the model's score, and
+    // because errors skew to higher scores, errors are over-censored: the naive
+    // observed error rate is biased LOW. Censoring depends on score (not on the
+    // error label beyond it), so reject inference via the score can recover it.
+    var rng3 = mulberry32((seed ^ 0x85EBCA6B) >>> 0);
+    for (var t = 0; t < n; t++) {
+      var pCens = 0.15 + 0.55 * records[t].score;   // ~0.26–0.67
+      if (pCens > 0.9) pCens = 0.9;
+      records[t].censored = rng3() < pCens ? 1 : 0;
+      records[t].observed = records[t].censored ? 0 : 1;
+    }
     return records;
   }
 

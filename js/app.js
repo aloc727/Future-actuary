@@ -56,7 +56,8 @@
       var kcoh = {};
       recs.forEach(function (r) { (kcoh[r.cohort] = kcoh[r.cohort] || { n: 0, errors: 0 }); kcoh[r.cohort].n++; kcoh[r.cohort].errors += r.error; });
       var kHat = A.buhlmannStraubK(Object.keys(kcoh).map(function (c) { return kcoh[c]; }));
-      cache = { key: key, records: recs, fs: fs, tri: tri, cl: cl, bf: bf, boot: boot, gpd: gpd, reserveDollar: reserveDollar, surfaced: surfaced, kHat: kHat };
+      var ri = A.rejectInference(recs);
+      cache = { key: key, records: recs, fs: fs, tri: tri, cl: cl, bf: bf, boot: boot, gpd: gpd, reserveDollar: reserveDollar, surfaced: surfaced, kHat: kHat, ri: ri };
     }
     return cache;
   }
@@ -197,6 +198,37 @@
     updateCredibility(ae, fs, k, book.kHat);
     updateReserveCard(fs, vt, sevVT, ibnr, ec, agg, reported, ldf, rho);
     updateReservingDetail(book, fs.meanSeverity);
+    updateCensoring(book);
+  }
+
+  function updateCensoring(book) {
+    var ri = book.ri, u = scenario.ui;
+    var data = {
+      labels: ["Naive observed", "Reject-inference", "True (ground truth)"],
+      datasets: [{
+        data: [100 * ri.naiveRate, 100 * ri.correctedRate, 100 * ri.trueRate],
+        backgroundColor: ["rgba(217,119,6,0.85)", "rgba(37,99,235,0.85)", "rgba(22,163,74,0.85)"],
+        borderWidth: 0
+      }]
+    };
+    var options = {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function (it) { return it.parsed.y.toFixed(2) + "% " + u.error + " rate"; } } }
+      },
+      scales: { y: { title: { display: true, text: u.error + " rate (%)" }, beginAtZero: true } }
+    };
+    if (charts.cens) { charts.cens.data = data; charts.cens.options = options; charts.cens.update(); }
+    else charts.cens = new Chart($("censChart"), { type: "bar", data: data, options: options });
+
+    $("censTable").innerHTML = [
+      ["Observed (outcome known)", ri.observed.toLocaleString("en-US") + " of " + ri.n.toLocaleString("en-US")],
+      ["Censored (never observed)", ri.censored.toLocaleString("en-US")],
+      ["Naive observed rate (biased low)", pct(ri.naiveRate)],
+      ["<strong>Reject-inference estimate</strong>", "<strong>" + pct(ri.correctedRate) + "</strong>"],
+      ["True rate (ground truth)", pct(ri.trueRate)]
+    ].map(function (r) { return "<tr><td>" + r[0] + "</td><td class='text-end'>" + r[1] + "</td></tr>"; }).join("");
   }
 
   function updateCards(fs, vt, alpha) {
