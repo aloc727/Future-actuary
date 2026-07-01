@@ -33,15 +33,18 @@
 
   <div class="mb-4">
     <div class="eyebrow">The AI Risk Lens</div>
-    <h1 class="fw-bold mb-2">A Humana-style prior-authorization AI, measured the actuarial way</h1>
-    <p class="lead-tight mb-0">
-      Below is a <strong>deterministic synthetic book of 10,000 AI-assisted prior-authorization decisions</strong>
-      for a Medicare Advantage post-acute population — the setting of the real <em>nH&nbsp;Predict</em> litigation.
-      Every number is computed in your browser from <code>js/actuarial.js</code>; there is no backend.
-      At the default settings these figures match Section&nbsp;6 of the
-      <a href="paper.html#worked">framework paper</a>. Move the controls to stress the book and watch
-      the governance metrics respond.
-    </p>
+    <h1 class="fw-bold mb-2">Any agentic system, measured the actuarial way</h1>
+    <div class="row g-3 align-items-end mb-2">
+      <div class="col-md-7">
+        <label for="scenarioSelect" class="form-label fw-semibold mb-1">Choose an AI / agentic system to measure</label>
+        <select id="scenarioSelect" class="form-select form-select-lg"></select>
+      </div>
+      <div class="col-md-5">
+        <span class="badge badge-soft rounded-pill" id="sectorBadge">—</span>
+        <span class="text-muted small ms-1">Same actuarial lens, different book of risk.</span>
+      </div>
+    </div>
+    <p class="lead-tight mb-0" id="toolIntro">—</p>
   </div>
 
   <!-- CONTROLS -->
@@ -63,10 +66,10 @@
       </div>
       <div class="col-md-3">
         <label for="driftSlider" class="form-label d-flex justify-content-between">
-          <span>Production drift (oldest cohorts)</span><span class="val" id="driftVal">35%</span>
+          <span id="driftLabelText">Production drift</span><span class="val" id="driftVal">35%</span>
         </label>
         <input type="range" class="form-range" id="driftSlider" min="0" max="1.0" step="0.05" value="0.35">
-        <div class="form-text">Model degradation on 75–84 &amp; 85+ cases. Set to 0% to see A/E ≈ 1.</div>
+        <div class="form-text" id="driftHelp">Set to 0% to see A/E ≈ 1.</div>
       </div>
       <div class="col-md-3">
         <label for="cohortSelect" class="form-label">Credibility cohort</label>
@@ -89,7 +92,7 @@
       <div class="metric-card">
         <div class="metric-label">Mean severity | error</div>
         <div class="metric-value" id="cardSeverity">—</div>
-        <div class="metric-sub">average $ damage of a wrongful denial</div>
+        <div class="metric-sub" id="cardSeveritySub">average $ damage per error</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
@@ -117,10 +120,7 @@
           <span class="badge badge-soft rounded-pill">replaces the single accuracy number</span>
         </div>
         <div class="chart-wrap"><canvas id="lossChart"></canvas></div>
-        <p class="caption"><span class="tag">What this means:</span>
-          Each error is not equal. The blue mass is routine; the red tail beyond
-          <strong>VaR<sub>α</sub></strong> is where the lawsuits live. <strong>TVaR<sub>α</sub></strong> is the
-          <em>average</em> cost of a decision once you are in that tail — the number a single accuracy figure can never show.</p>
+        <p class="caption" id="capLoss"></p>
       </div>
     </div>
     <div class="col-lg-5">
@@ -130,10 +130,7 @@
           <span class="badge badge-danger-soft rounded-pill">replaces one-time validation</span>
         </div>
         <div class="chart-wrap"><canvas id="aeChart"></canvas></div>
-        <p class="caption"><span class="tag">What this means:</span>
-          Green cohorts behave as the model was validated (A/E ≈ 1.0). Red cohorts have
-          <strong>drifted</strong>: reality is producing far more errors than expected. A single portfolio
-          accuracy number averages these together and stays silent — the A/E study names the victims.</p>
+        <p class="caption" id="capAE"></p>
       </div>
     </div>
   </div>
@@ -166,12 +163,8 @@
             <tbody id="reserveTable"></tbody>
           </table>
         </div>
-        <p class="caption"><span class="tag">What this means:</span>
-          Ground truth lags, so today's adjudicated errors are only part of the story. A loss-development
-          factor projects the <strong>ultimate</strong> errors; the gap is <strong>IBNR</strong> — failures already
-          baked in but not yet surfaced — which you must <strong>reserve</strong> for. <strong>Economic capital</strong>
-          (TVaR − expected loss) is the buffer for the tail beyond the reserve. The portfolio capital figure is
-          an <em>undiversified</em> upper bound (see paper §8).</p>
+        <p class="caption" id="capReserve"></p>
+        <p class="caption pt-0" style="border-top:none">Economic capital (TVaR − expected loss) is the buffer for the tail beyond the reserve; the portfolio figure is an <em>undiversified</em> upper bound (see paper §9).</p>
       </div>
     </div>
   </div>

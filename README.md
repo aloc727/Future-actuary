@@ -18,7 +18,7 @@ worked example.
 |---|---|
 | **`index.html`** | Landing page: the thesis, the "old vs. new" comparison, the regulatory anchor, and the seven method mappings. |
 | **`paper.html`** | The full framework paper, *Reserving Against the Black Box*, rendered from Markdown with math (MathJax). |
-| **`tool.html`** | The **AI Risk Lens** — a live tool that computes the actuarial metrics on a 10,000-decision synthetic prior-authorization book, with Chart.js visuals and tweakable inputs. |
+| **`tool.html`** | The **AI Risk Lens** — a live tool that computes the actuarial metrics on a 10,000-decision synthetic book, with Chart.js visuals and tweakable inputs. A **scenario switcher** runs the same lens over four domains: a health-insurer prior-auth model, a **BPO customer-operations agent**, a **marketing campaign agent**, and a **software-engineering coding agent**. |
 | **`docs/ACTUARIAL_AI_EXPLAINABILITY.md`** | Markdown source of the paper (single source of truth). |
 
 ```
@@ -28,7 +28,8 @@ worked example.
 /css/styles.css
 /js/actuarial.js     pure actuarial functions (frequencySeverity, buhlmannCredibility,
                      actualToExpected, varTvar, ibnrReserve, economicCapital)
-/js/sample-data.js   deterministic, seeded synthetic 10k-decision portfolio
+/js/sample-data.js   deterministic, seeded synthetic 10k-decision portfolios
+                     (a scenario registry: prior-auth, BPO, marketing, SWE)
 /js/app.js           UI wiring + Chart.js visuals
 /docs/ACTUARIAL_AI_EXPLAINABILITY.md   the paper, in Markdown
 /README.md
@@ -75,10 +76,12 @@ can reproduce and invariant-check them with Node (the JS modules run unchanged i
 ```bash
 node -e '
 const A=require("./js/actuarial.js"), D=require("./js/sample-data.js");
-const r=D.generatePortfolio({drift:0.35});
-const fs=A.frequencySeverity(r), vt=A.varTvar(fs.losses,0.95);
-console.log("frequency", (100*fs.frequency).toFixed(2)+"%", "expLoss $"+Math.round(fs.expectedLoss));
-console.log("VaR $"+Math.round(vt.var), "TVaR $"+Math.round(vt.tvar), "TVaR>=VaR:", vt.tvar>=vt.var);
+for (const id of D.SCENARIO_LIST) {
+  const r=D.generatePortfolio({scenario:id});           // default seed/drift per scenario
+  const fs=A.frequencySeverity(r), vt=A.varTvar(fs.losses,0.95);
+  console.log(id.padEnd(11), "freq", (100*fs.frequency).toFixed(2)+"%",
+    "E[L] $"+Math.round(fs.expectedLoss), "TVaR $"+Math.round(vt.tvar), "TVaR>=VaR:", vt.tvar>=vt.var);
+}
 '
 ```
 

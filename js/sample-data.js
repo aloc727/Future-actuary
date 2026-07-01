@@ -1,29 +1,26 @@
 /*
- * sample-data.js — Deterministic synthetic prior-authorization portfolio.
+ * sample-data.js — Deterministic synthetic portfolios for several agentic /
+ * AI decision systems. Demonstrates that the actuarial framework is
+ * domain-general: any stream of consequential autonomous decisions is an
+ * "insurable book" whose errors form a loss distribution.
  *
- * Models a Humana-style Medicare Advantage book: ~10,000 AI-assisted
- * prior-authorization / post-acute length-of-stay decisions. Every random
- * draw comes from a SEEDED generator, so the portfolio is byte-for-byte
- * reproducible and the numbers match the framework paper exactly.
+ * Each SCENARIO supplies the same shape of synthetic book (~10,000 decisions)
+ * but with its own cohorts, error rates, dollar severities, reporting lag,
+ * and plain-English labels. Every draw comes from a SEEDED generator, so each
+ * book is byte-for-byte reproducible and the numbers match the paper.
  *
- * Record shape:
- *   {
- *     id,            // integer
- *     cohort,        // age band, the unit of A/E monitoring
- *     condition,     // flavour tag (post-acute service line)
- *     score,         // model's confidence that denial is appropriate, [0,1]
- *     expectedRate,  // validation-time expected error rate for the cohort
- *     error,         // 0|1 realized: was the AI decision wrong?
- *     reported,      // 0|1: has this error been surfaced (appeal/audit) yet?
- *     severity       // dollar loss GIVEN an error (0 otherwise carried sep.)
- *   }
+ * Record shape (identical across scenarios):
+ *   { id, cohort, condition, score, expectedRate, error, reported, severity }
  *
- * The `drift` parameter inflates the realized error rate in the oldest
- * cohorts ONLY (model degradation on complex elderly cases). Because each
- * decision's uniform draw is fixed by the seed, raising drift monotonically
- * converts more decisions into errors — smooth, deterministic, reversible.
- * At drift = 0 the realized rate equals the expected rate, so A/E ~ 1.0
- * everywhere (the no-drift invariant).
+ * The `drift` parameter inflates the realized error rate in the cohorts
+ * flagged `drifts:true` (model degradation). Because each decision's uniform
+ * draws are fixed by the seed AND the number of draws per decision is constant,
+ * raising drift only flips error flags in the flagged cohorts — non-drift
+ * cohorts are untouched, so A/E ~ 1.0 there. At drift = 0 every cohort's
+ * A/E ~ 1.0 (the no-drift invariant).
+ *
+ * IMPORTANT: the per-decision RNG draw ORDER and COUNT must never change, or
+ * the reproducible numbers (and the paper's worked example) will shift.
  */
 (function (global) {
   "use strict";
@@ -39,88 +36,213 @@
     };
   }
 
-  // Standard normal via Box-Muller (for lognormal severities).
+  // Standard normal via Box-Muller (for lognormal severities). Two draws.
   function randn(rng) {
-    var u = 1 - rng(); // (0,1]
+    var u = 1 - rng();
     var v = 1 - rng();
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   }
 
-  // Cohort definitions. expectedRate = validation-time error rate the model
-  // was signed off at. sevMu / sevSigma parametrize a lognormal dollar
-  // severity (older / sicker cohorts carry heavier tails). drifts: which
-  // cohorts degrade in production. weight: share of the book.
-  var COHORTS = [
-    { cohort: "18-39", weight: 0.10, expectedRate: 0.040, sevMu: 8.20, sevSigma: 0.55, drifts: false },
-    { cohort: "40-54", weight: 0.16, expectedRate: 0.050, sevMu: 8.45, sevSigma: 0.60, drifts: false },
-    { cohort: "55-64", weight: 0.20, expectedRate: 0.060, sevMu: 8.70, sevSigma: 0.65, drifts: false },
-    { cohort: "65-74", weight: 0.26, expectedRate: 0.080, sevMu: 8.95, sevSigma: 0.70, drifts: false },
-    { cohort: "75-84", weight: 0.18, expectedRate: 0.110, sevMu: 9.15, sevSigma: 0.80, drifts: true },
-    { cohort: "85+",   weight: 0.10, expectedRate: 0.150, sevMu: 9.35, sevSigma: 0.95, drifts: true }
-  ];
+  // ---- SCENARIOS -----------------------------------------------------------
+  // cohort fields: name, weight (share of book), expectedRate (validation-time
+  // error rate), sevMu/sevSigma (lognormal $ severity), drifts (degrades in
+  // production). conditions = flavour tags. ui = plain-English labels so the
+  // tool and paper speak each domain's language.
 
-  var CONDITIONS = ["SNF rehab", "Home health", "Inpatient rehab", "LTAC", "Cardiac post-acute"];
+  var SCENARIOS = {
 
-  // Defaults that define the paper's worked example.
-  var DEFAULTS = {
-    seed: 1242,
-    n: 10000,
-    drift: 0.35,            // production drift discovered in oldest cohorts
-    reportingFraction: 2 / 3 // 2/3 of true errors surfaced so far -> LDF = 1.5
+    // 1) Health insurer — Medicare-Advantage prior authorization (the nH
+    //    Predict setting). UNCHANGED from v1 so the paper's §6 numbers hold.
+    "prior-auth": {
+      id: "prior-auth",
+      label: "Health insurer — prior authorization",
+      sector: "Regulated decisioning",
+      seed: 1242, n: 10000, drift: 0.35, reportingFraction: 2 / 3,
+      cohorts: [
+        { name: "18-39", weight: 0.10, expectedRate: 0.040, sevMu: 8.20, sevSigma: 0.55, drifts: false },
+        { name: "40-54", weight: 0.16, expectedRate: 0.050, sevMu: 8.45, sevSigma: 0.60, drifts: false },
+        { name: "55-64", weight: 0.20, expectedRate: 0.060, sevMu: 8.70, sevSigma: 0.65, drifts: false },
+        { name: "65-74", weight: 0.26, expectedRate: 0.080, sevMu: 8.95, sevSigma: 0.70, drifts: false },
+        { name: "75-84", weight: 0.18, expectedRate: 0.110, sevMu: 9.15, sevSigma: 0.80, drifts: true },
+        { name: "85+",   weight: 0.10, expectedRate: 0.150, sevMu: 9.35, sevSigma: 0.95, drifts: true }
+      ],
+      conditions: ["SNF rehab", "Home health", "Inpatient rehab", "LTAC", "Cardiac post-acute"],
+      ui: {
+        agent: "prior-authorization model",
+        decision: "prior-authorization decision",
+        decisionsShort: "decisions",
+        error: "wrongful denial",
+        errors: "wrongful denials",
+        cohortAxis: "age-band cohort",
+        cohortNoun: "age band",
+        driftWho: "the oldest cohorts (75-84, 85+)",
+        defaultCredCohort: "85+",
+        ldfNote: "appeals & retrospective chart review surface errors over time",
+        intro: "A synthetic book of <strong>10,000 AI-assisted prior-authorization decisions</strong> for a Medicare-Advantage post-acute population — the setting of the real <em>nH&nbsp;Predict</em> litigation. An “error” is a wrongful denial; severity is its dollar harm (appeal, delayed care, litigation).",
+        sevSub: "average $ damage of a wrongful denial",
+        capLoss: "Each error is not equal. The blue mass is routine; the red tail beyond <strong>VaR</strong> is where the lawsuits live. <strong>TVaR</strong> is the average cost of a decision once you’re in that tail — invisible to a single accuracy figure.",
+        capAE: "Green age bands behave as validated (A/E ≈ 1.0). Red bands have <strong>drifted</strong> — reality is producing far more wrongful denials than expected. A single accuracy number averages this away; A/E names the cohort absorbing the harm.",
+        capReserve: "Ground truth lags via appeals. A development factor projects <strong>ultimate</strong> denials; the gap is <strong>IBNR</strong> — wrongful denials already made but not yet surfaced — which you must reserve for."
+      }
+    },
+
+    // 2) BPO consulting firm — autonomous back-office customer-operations agent
+    //    resolving client tickets under SLAs.
+    "bpo": {
+      id: "bpo",
+      label: "BPO consulting — customer-ops agent",
+      sector: "Autonomous operations / SLA",
+      seed: 398, n: 10000, drift: 0.35, reportingFraction: 0.60,
+      cohorts: [
+        { name: "Billing disputes", weight: 0.22, expectedRate: 0.050, sevMu: 6.20, sevSigma: 0.80, drifts: false },
+        { name: "Refunds & credits", weight: 0.20, expectedRate: 0.060, sevMu: 6.40, sevSigma: 0.85, drifts: false },
+        { name: "Account changes", weight: 0.18, expectedRate: 0.040, sevMu: 5.90, sevSigma: 0.70, drifts: false },
+        { name: "Claims intake", weight: 0.16, expectedRate: 0.080, sevMu: 6.80, sevSigma: 0.95, drifts: false },
+        { name: "KYC / onboarding", weight: 0.14, expectedRate: 0.100, sevMu: 7.20, sevSigma: 1.05, drifts: true },
+        { name: "Collections", weight: 0.10, expectedRate: 0.120, sevMu: 7.00, sevSigma: 1.00, drifts: true }
+      ],
+      conditions: ["Tier-1 enterprise", "Mid-market", "SMB", "Public sector", "Healthcare client"],
+      ui: {
+        agent: "customer-operations agent",
+        decision: "auto-resolved ticket",
+        decisionsShort: "tickets",
+        error: "mis-resolution",
+        errors: "mis-resolutions",
+        cohortAxis: "process queue",
+        cohortNoun: "queue",
+        driftWho: "the compliance-heavy queues (KYC, Collections)",
+        defaultCredCohort: "KYC / onboarding",
+        ldfNote: "QA sampling and client callbacks surface errors over weeks",
+        intro: "A synthetic book of <strong>10,000 back-office tickets auto-resolved by an agentic system</strong> a BPO consulting firm runs for its clients under SLAs. An “error” is a mis-resolution (wrong action, policy breach, falsely “resolved”); severity is rework + SLA penalty + client-credit cost, with a compliance tail.",
+        sevSub: "average $ cost of a mis-resolution (rework + SLA penalty)",
+        capLoss: "Most mis-resolutions cost a little rework; the red tail beyond <strong>VaR</strong> is systemic mis-action — mass wrong credits, an SLA-breaching backlog, a compliance miss. <strong>TVaR</strong> prices that bad day; an aggregate “resolution accuracy” number hides it.",
+        capAE: "Green queues run as validated (A/E ≈ 1.0). Red queues have <strong>drifted</strong> — a client changed its rules and the agent silently degraded. A/E flags exactly which queue and client SLA is now under-performing.",
+        capReserve: "Errors surface slowly through QA and client callbacks. A development factor projects <strong>ultimate</strong> mis-resolutions; the gap is <strong>IBNR</strong> — SLA penalties already incurred but not yet billed back — to reserve against."
+      }
+    },
+
+    // 3) Growth/marketing org — autonomous marketing agent generating creative,
+    //    choosing audiences, setting bids, and sending campaigns.
+    "marketing": {
+      id: "marketing",
+      label: "Marketing — autonomous campaign agent",
+      sector: "Autonomous growth",
+      seed: 737, n: 10000, drift: 0.35, reportingFraction: 0.55,
+      cohorts: [
+        { name: "Paid search", weight: 0.22, expectedRate: 0.040, sevMu: 4.60, sevSigma: 0.90, drifts: false },
+        { name: "Paid social", weight: 0.22, expectedRate: 0.060, sevMu: 4.80, sevSigma: 1.00, drifts: false },
+        { name: "Email / CRM", weight: 0.18, expectedRate: 0.050, sevMu: 4.40, sevSigma: 1.10, drifts: false },
+        { name: "Display / programmatic", weight: 0.16, expectedRate: 0.090, sevMu: 5.20, sevSigma: 1.30, drifts: true },
+        { name: "Influencer / UGC", weight: 0.12, expectedRate: 0.080, sevMu: 5.40, sevSigma: 1.35, drifts: true },
+        { name: "Affiliate", weight: 0.10, expectedRate: 0.070, sevMu: 5.00, sevSigma: 1.20, drifts: false }
+      ],
+      conditions: ["Acquisition", "Retention", "Reactivation", "Brand", "Cross-sell"],
+      ui: {
+        agent: "marketing agent",
+        decision: "autonomous campaign action",
+        decisionsShort: "actions",
+        error: "bad action",
+        errors: "bad actions",
+        cohortAxis: "marketing channel",
+        cohortNoun: "channel",
+        driftWho: "the brand-safety-exposed channels (programmatic, influencer)",
+        defaultCredCohort: "Display / programmatic",
+        ldfNote: "complaints, brand sentiment, and delayed attribution surface errors slowly",
+        intro: "A synthetic book of <strong>10,000 autonomous actions taken by a marketing agent</strong> that generates creative, picks audiences, sets bids, and sends campaigns. A “bad action” is wasted spend on mistargeted/fraudulent inventory, an off-brand/hallucinated claim, or a compliance violation (CAN-SPAM/GDPR/FTC); severity is the dollar cost, with a fines/brand-incident tail.",
+        sevSub: "average $ cost of a bad action (wasted spend + complaints)",
+        capLoss: "Most bad actions waste a little spend; the red tail beyond <strong>VaR</strong> is the viral brand-safety incident or the mass-send compliance fine. <strong>TVaR</strong> sizes that tail — which a blended ROAS or “brand-safety %” never shows.",
+        capAE: "Green channels behave as validated (A/E ≈ 1.0). Red channels have <strong>drifted</strong> — new inventory/creative pushed the agent off-policy. A/E pinpoints the channel quietly burning budget or risking the brand.",
+        capReserve: "Damage surfaces slowly via complaints, deliverability and delayed attribution. A development factor projects <strong>ultimate</strong> bad actions; the gap is <strong>IBNR</strong> — brand/compliance liability already incurred but not yet visible."
+      }
+    },
+
+    // 4) Engineering org — autonomous software-engineering agent shipping code
+    //    changes / PRs. The canonical "latent defect = IBNR" story.
+    "swe": {
+      id: "swe",
+      label: "Software engineering — coding agent",
+      sector: "Autonomous engineering",
+      seed: 44, n: 10000, drift: 0.35, reportingFraction: 0.40,
+      cohorts: [
+        { name: "Frontend", weight: 0.22, expectedRate: 0.050, sevMu: 7.60, sevSigma: 0.80, drifts: false },
+        { name: "Backend API", weight: 0.24, expectedRate: 0.060, sevMu: 8.00, sevSigma: 0.90, drifts: false },
+        { name: "Data pipeline", weight: 0.16, expectedRate: 0.070, sevMu: 8.20, sevSigma: 1.00, drifts: false },
+        { name: "Infra / IaC", weight: 0.14, expectedRate: 0.090, sevMu: 8.60, sevSigma: 1.10, drifts: true },
+        { name: "Auth / security", weight: 0.12, expectedRate: 0.080, sevMu: 8.90, sevSigma: 1.20, drifts: true },
+        { name: "Payments", weight: 0.12, expectedRate: 0.070, sevMu: 9.00, sevSigma: 1.15, drifts: false }
+      ],
+      conditions: ["Feature", "Refactor", "Bugfix", "Dependency bump", "Config change"],
+      ui: {
+        agent: "coding agent",
+        decision: "auto-merged code change",
+        decisionsShort: "changes",
+        error: "defect",
+        errors: "defects",
+        cohortAxis: "service area",
+        cohortNoun: "service area",
+        driftWho: "the hardest areas (Infra/IaC, Auth/security)",
+        defaultCredCohort: "Auth / security",
+        ldfNote: "latent defects surface slowly through incidents and audits (a long reporting tail)",
+        intro: "A synthetic book of <strong>10,000 code changes auto-merged by a software-engineering agent</strong>. A “defect” is a bug/regression/vulnerability that causes an incident or rollback; severity is remediation cost (dev hours + incident impact), with an outage/breach tail. This is the canonical <em>latent-defect</em> case — most errors are incurred long before they’re reported.",
+        sevSub: "average $ remediation cost of a defect",
+        capLoss: "Most defects are cheap fixes; the red tail beyond <strong>VaR</strong> is the outage, data-loss, or security breach. <strong>TVaR</strong> prices that tail — which a green test-suite or “PR pass rate” cannot.",
+        capAE: "Green service areas behave as validated (A/E ≈ 1.0). Red areas have <strong>drifted</strong> — the agent is shipping more defects than it was signed off at in the hardest code. A/E names the service quietly accumulating risk.",
+        capReserve: "Defects are <strong>incurred but not reported</strong> for months. A development factor (here a large one) projects <strong>ultimate</strong> defects; the gap is <strong>IBNR</strong> — latent bugs already merged but not yet triggered — the reserve you owe today."
+      }
+    }
   };
 
-  function pickCohort(u) {
-    var acc = 0;
-    for (var i = 0; i < COHORTS.length; i++) {
-      acc += COHORTS[i].weight;
-      if (u <= acc) return COHORTS[i];
-    }
-    return COHORTS[COHORTS.length - 1];
+  var SCENARIO_LIST = ["prior-auth", "bpo", "marketing", "swe"];
+
+  function getScenario(id) {
+    return SCENARIOS[id] || SCENARIOS["prior-auth"];
   }
 
-  // Generate the portfolio. Pass {drift} to stress the oldest cohorts; all
-  // other structure is fixed by the seed.
+  function pickCohort(cohorts, u) {
+    var acc = 0;
+    for (var i = 0; i < cohorts.length; i++) {
+      acc += cohorts[i].weight;
+      if (u <= acc) return cohorts[i];
+    }
+    return cohorts[cohorts.length - 1];
+  }
+
+  // Generate a portfolio for a scenario. opts: { scenario, drift, seed, n }.
   function generatePortfolio(opts) {
     opts = opts || {};
-    var seed = opts.seed != null ? opts.seed : DEFAULTS.seed;
-    var n = opts.n != null ? opts.n : DEFAULTS.n;
-    var drift = opts.drift != null ? opts.drift : DEFAULTS.drift;
-    var reportingFraction = opts.reportingFraction != null ? opts.reportingFraction : DEFAULTS.reportingFraction;
+    var sc = getScenario(opts.scenario || "prior-auth");
+    var seed = opts.seed != null ? opts.seed : sc.seed;
+    var n = opts.n != null ? opts.n : sc.n;
+    var drift = opts.drift != null ? opts.drift : sc.drift;
+    var reportingFraction = opts.reportingFraction != null ? opts.reportingFraction : sc.reportingFraction;
+    var cohorts = sc.cohorts;
+    var conditions = sc.conditions;
 
     var rng = mulberry32(seed);
     var records = new Array(n);
 
     for (var i = 0; i < n; i++) {
-      var c = pickCohort(rng());
+      var c = pickCohort(cohorts, rng());                 // draw 1
 
-      // Effective (realized) error rate: drift lifts only the flagged cohorts.
       var effRate = c.drifts ? c.expectedRate * (1 + drift) : c.expectedRate;
       if (effRate > 0.95) effRate = 0.95;
 
-      var uErr = rng();                 // fixed per decision -> monotone in drift
+      var uErr = rng();                                   // draw 2
       var error = uErr < effRate ? 1 : 0;
 
-      // Model score: well-calibrated denials cluster near the decision
-      // boundary; errors skew toward over-confident denials.
-      var score = error
-        ? 0.55 + 0.40 * rng()           // confidently denied, but wrong
+      var score = error                                   // draw 3
+        ? 0.55 + 0.40 * rng()
         : 0.20 + 0.70 * rng();
 
-      // Lognormal dollar severity for THIS decision (only matters if error).
-      var severity = Math.exp(c.sevMu + c.sevSigma * randn(rng));
+      var severity = Math.exp(c.sevMu + c.sevSigma * randn(rng)); // draws 4,5
 
-      // Reporting / ground-truth lag: only a fraction of true errors have
-      // surfaced (appeals, audits, retrospective chart review). NOTE: draw
-      // the uniform UNCONDITIONALLY so the RNG stream consumes a fixed number
-      // of draws per decision. Otherwise drift (which changes error counts)
-      // would desynchronize the stream and silently shift non-drift cohorts.
-      var repDraw = rng();
+      var repDraw = rng();                                // draw 6
       var reported = error && repDraw < reportingFraction ? 1 : 0;
 
       records[i] = {
         id: i,
-        cohort: c.cohort,
-        condition: CONDITIONS[Math.floor(rng() * CONDITIONS.length)],
+        cohort: c.name,
+        condition: conditions[Math.floor(rng() * conditions.length)], // draw 7
         score: score,
         expectedRate: c.expectedRate,
         error: error,
@@ -131,10 +253,20 @@
     return records;
   }
 
+  // Back-compat: some callers read DEFAULTS for the prior-auth scenario.
+  var DEFAULTS = {
+    seed: SCENARIOS["prior-auth"].seed,
+    n: SCENARIOS["prior-auth"].n,
+    drift: SCENARIOS["prior-auth"].drift,
+    reportingFraction: SCENARIOS["prior-auth"].reportingFraction
+  };
+
   var api = {
-    COHORTS: COHORTS,
-    DEFAULTS: DEFAULTS,
-    generatePortfolio: generatePortfolio
+    SCENARIOS: SCENARIOS,
+    SCENARIO_LIST: SCENARIO_LIST,
+    getScenario: getScenario,
+    generatePortfolio: generatePortfolio,
+    DEFAULTS: DEFAULTS
   };
 
   global.SampleData = api;

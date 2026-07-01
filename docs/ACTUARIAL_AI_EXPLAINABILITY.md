@@ -129,7 +129,7 @@ coverage silently degrades. The actuarial framework is **complementary**: confor
 prediction can supply per-decision miss probabilities (a principled frequency input), and
 the actuarial layer multiplies them by severity, reserves the lag, monitors the cohorts, and
 converts the result into capital and a signed opinion. We return to the overlap honestly in
-§8.
+§9.
 
 ---
 
@@ -148,8 +148,9 @@ system's stream of decisions." The decision stream *is* the book; each error *is
 | **Economic capital** | buffer above expected loss for solvency | the buffer to hold against AI tail risk: `TVaR_α − E[loss]` |
 | **Control cycle + signed opinion + ASOPs** | the actuarial control cycle; a signed reserve opinion | a credentialed accountability layer: a **Statement of Actuarial AI Opinion** attesting to model risk under professional standards |
 
-The rest of the paper turns each row into math (§5), runs all of them on one book (§6), and
-proposes the professional wrapper (§7).
+The rest of the paper turns each row into math (§5), runs all of them on one book (§6),
+generalizes the same machinery to non-insurance agentic systems (§7), and proposes the
+professional wrapper (§8).
 
 ---
 
@@ -266,7 +267,7 @@ $$\text{EC}_\alpha = \text{TVaR}_\alpha - \mathbb{E}[L] \ge 0,$$
 
 the buffer above expected loss needed to survive a tail outcome. Per-decision EC scales to a
 book of `N` decisions; we report `N·EC` as an **undiversified upper bound** (it ignores the
-diversification a coherent aggregate model would credit — see §8).
+diversification a coherent aggregate model would credit — see §9).
 
 ---
 
@@ -366,7 +367,7 @@ Only **621** errors have surfaced, but development implies **932** ultimately oc
 tail severity, is **≈ $15.7M.** This is money the actuarial lens tells you to set aside today
 that *no accuracy number, SHAP plot, or conformal set would ever surface.* The economic
 capital figure is the buffer for the tail beyond the reserve (reported as an undiversified
-bound; see §8).
+bound; see §9).
 
 ### 6.6 What the actuarial lens saw that the software lens could not
 
@@ -377,13 +378,119 @@ bound; see §8).
 | Who gets hurt? | (averaged away) | 85+ cohort A/E = 1.40; believed rate 12.5%. |
 | What do we owe already? | (no concept) | $15.7M IBNR reserve for 311 hidden failures. |
 | What capital backs the tail? | (no concept) | EC = $16,355/decision. |
-| Who signs for it? | (nobody) | A Statement of Actuarial AI Opinion (§7). |
+| Who signs for it? | (nobody) | A Statement of Actuarial AI Opinion (§8). |
 
 ---
 
-## 7. A proposed standard
+## 7. Generalizing the framework: agentic systems beyond insurance
 
-### 7.1 Statement of Actuarial AI Opinion (template)
+Nothing in §§3–5 is specific to insurance. The machinery needs only four things from a
+system: a **stream of consequential decisions**, a definition of an **error**, a **dollar
+severity** for an error, and **cohorts** to monitor. Any autonomous or AI-assisted system
+that decides at volume supplies all four — so its error stream *is* an insurable book, and
+the same seven instruments apply. The companion tool ships this section as a live
+**scenario switcher**; every figure below is produced deterministically by the same
+`actuarial.js` functions on a seeded synthetic book of 10,000 decisions per domain.
+
+The translation is purely a matter of vocabulary:
+
+| Framework primitive | Prior-auth (insurer) | BPO customer-ops agent | Marketing agent | Software-engineering agent |
+|---|---|---|---|---|
+| A **decision** | a prior-auth determination | a ticket auto-resolved | an autonomous campaign action | an auto-merged code change |
+| An **error** | a wrongful denial | a mis-resolution (wrong action / policy breach) | a bad action (waste, off-brand, non-compliant) | a defect (bug / regression / vuln) |
+| **Severity** | appeal + delayed-care + litigation cost | rework + SLA penalty + client credit | wasted spend + complaints + (tail) fine/brand hit | dev hours + incident impact (outage/breach) |
+| **Cohort** (A/E unit) | age band | process queue / client SLA | channel / segment | service area |
+| **Reporting lag** (IBNR) | appeals, chart review | QA sampling, client callbacks | complaints, deliverability, attribution | latent defects surfacing via incidents |
+| **Tail** (VaR/TVaR) | a catastrophic denial / class action | a systemic mis-action across a client | a viral brand-safety or mass-send event | an outage / data breach |
+
+### 7.1 BPO consulting — an autonomous customer-operations agent
+
+A BPO firm runs an agent that resolves clients' back-office tickets (billing, refunds, KYC,
+collections) autonomously under SLAs. An error is a mis-resolution; severity is rework plus
+SLA penalty plus client-goodwill credit, with a compliance tail. Cohorts are **process
+queues** (each tied to a client SLA), so A/E becomes per-SLA drift monitoring.
+
+| Metric | Value |
+|---|---|
+| Decisions / errors / **frequency** | 10,000 / 776 / **7.76%** |
+| Mean severity · expected loss / ticket | $1,562 · **$121** ($1.21M / book) |
+| `VaR₀.₉₅` · `TVaR₀.₉₅` per ticket | $514 · **$2,257** (18.6× expected) |
+| Reported → ultimate (LDF 1.67) → **IBNR** | 466 → 777 → **311** mis-resolutions |
+| **Reserve** · economic capital / ticket | **$3.18M** · $2,135 |
+| A/E flags | **KYC / onboarding 1.43**, **Collections 1.28** (a client changed its rules) |
+
+The lesson: a blended "resolution accuracy" looks fine while two queues quietly breach their
+SLAs. A/E names the client and queue; the reserve sizes the penalties already owed but not
+yet billed back.
+
+### 7.2 Marketing — an autonomous campaign agent
+
+An agent generates creative, picks audiences, sets bids, and sends campaigns across channels.
+An error is a bad action — wasted spend on mistargeted/fraudulent inventory, an off-brand or
+hallucinated claim, or a compliance violation (CAN-SPAM / GDPR / FTC). Most cost pennies; a
+few cost a fortune.
+
+| Metric | Value |
+|---|---|
+| Decisions / errors / **frequency** | 10,000 / 715 / **7.15%** |
+| Mean severity · expected loss / action | $353 · **$25** ($0.25M / book) |
+| `VaR₀.₉₅` · `TVaR₀.₉₅` per action | $78 · **$486** (**19.2×** expected — the fattest tail of the four) |
+| Reported → ultimate (LDF 1.82) → **IBNR** | 396 → 720 → **324** bad actions |
+| **Reserve** · economic capital / action | **$1.04M** · $461 |
+| A/E flags | **Influencer / UGC 1.45**, **Display / programmatic 1.42** (brand-safety drift) |
+
+The lesson: average cost-per-action is trivial, so a ROAS dashboard says "fine," yet the tail
+multiplier is the highest of any domain here — the rare viral brand incident or mass-send fine
+dominates the risk. Exactly the structure VaR/TVaR exist to expose.
+
+### 7.3 Software engineering — an autonomous coding agent
+
+An agent ships code changes / PRs autonomously. An error is a defect (bug, regression,
+vulnerability) causing an incident or rollback; severity is remediation plus incident impact.
+This is the **canonical IBNR case**: defects are *incurred but not reported* for months.
+
+| Metric | Value |
+|---|---|
+| Decisions / errors / **frequency** | 10,000 / 752 / **7.52%** |
+| Mean severity · expected loss / change | $9,059 · **$681** ($6.81M / book) |
+| `VaR₀.₉₅` · `TVaR₀.₉₅` per change | $2,651 · **$12,885** (18.9× expected) |
+| Reported → ultimate (**LDF 2.50**) → **IBNR** | **302 → 755 → 453** defects |
+| **Reserve** · economic capital / change | **$26.96M** · $12,204 |
+| A/E flags | **Infra / IaC 1.40**, **Auth / security 1.29** (the hardest code) |
+
+The lesson is the sharpest in the set: only **302** defects have surfaced, but development
+implies **755** — so **IBNR (453) exceeds what has been reported (302).** A green test suite
+and a high "PR pass rate" describe the 302; they are structurally blind to the 453 latent
+defects already merged. The reserve — **$27M, dwarfing the $6.8M of expected loss** — is the
+number an actuarial lens forces onto the table and a software lens never names.
+
+### 7.4 What the cross-domain view shows
+
+| System | Freq. | Mean severity | TVaR₀.₉₅ / decision | TVaR ÷ E[L] | LDF | Reserve | A/E-flagged cohorts |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Health prior-auth | 9.17% | $11,444 | $17,404 | 16.6× | 1.50 | $15.66M | 75-84, 85+ |
+| BPO customer-ops | 7.76% | $1,562 | $2,257 | 18.6× | 1.67 | $3.18M | KYC, Collections |
+| Marketing agent | 7.15% | $353 | $486 | 19.2× | 1.82 | $1.04M | Influencer, Programmatic |
+| SW-engineering agent | 7.52% | $9,059 | $12,885 | 18.9× | 2.50 | $26.96M | Infra/IaC, Auth/security |
+
+Two observations make the case that this is a *standard*, not a one-off:
+
+1. **The tail is never within an order of magnitude of the average.** Across four unrelated
+   domains, `TVaR₀.₉₅` runs **16–19× expected loss per decision**. A single accuracy number or
+   expected-value summary discards precisely the part that ranges 16–19× larger.
+2. **Ground-truth lag varies and matters.** The loss-development factor ranges from 1.5
+   (fast appeals) to 2.5 (slow-surfacing software defects). The slower the feedback, the more
+   of the risk is IBNR — which is exactly where the software-engineering agent's reserve
+   explodes. A framework that ignores reporting lag (every incumbent does) under-reserves most
+   in the systems being deployed fastest.
+
+The same `actuarial.js` produced all of it; only the book changed.
+
+---
+
+## 8. A proposed standard
+
+### 8.1 Statement of Actuarial AI Opinion (template)
 
 A short, signable instrument modeled on the statutory Statement of Actuarial Opinion that
 accompanies an insurer's reserves:
@@ -410,11 +517,11 @@ accompanies an insurer's reserves:
 >    re-pricing and remediation.
 >
 > **Reliances and limitations.** *[ground-truth lag, exchangeability, cohort design, scope
-> exclusions — see §8].*
+> exclusions — see §9].*
 >
 > *Signature / date / credential / governing standards.*
 
-### 7.2 ASOP-style skeleton for AI model risk
+### 8.2 ASOP-style skeleton for AI model risk
 
 A standard-of-practice skeleton (in the spirit of the U.S. Actuarial Standards of Practice)
 the profession could adopt for AI model-risk work:
@@ -433,7 +540,7 @@ the profession could adopt for AI model-risk work:
 
 ---
 
-## 8. Limitations (read this — it is what makes the framework credible)
+## 9. Limitations (read this — it is what makes the framework credible)
 
 A framework that claims to *replace* incumbent methods has to be honest about where it is
 weak. It is.
@@ -486,7 +593,7 @@ top of* conformal prediction, not pretend to supersede it.
 
 ---
 
-## 9. References
+## 10. References
 
 1. NAIC. *Model Bulletin on the Use of Artificial Intelligence Systems by Insurers* (adopted
    Dec 4, 2023). National Association of Insurance Commissioners.
@@ -515,6 +622,7 @@ top of* conformal prediction, not pretend to supersede it.
 
 ---
 
-*Reproducibility:* every numeric figure in §6 is emitted by `js/actuarial.js` +
-`js/sample-data.js` at the stated defaults and rendered live in `tool.html`. See
+*Reproducibility:* every numeric figure in §6 and §7 is emitted by `js/actuarial.js` +
+`js/sample-data.js` at the stated defaults and rendered live in `tool.html` (use the scenario
+switcher to reproduce each domain). See
 `README.md` for how to run and verify locally.
