@@ -329,9 +329,23 @@
   };
 
   var SCENARIO_LIST = ["prior-auth", "bpo", "marketing", "swe", "fraud", "credit", "triage", "support"];
+  var DEV_PERIODS = 8; // accident/development periods in the reserving triangle
 
   function getScenario(id) {
     return SCENARIOS[id] || SCENARIOS["prior-auth"];
+  }
+
+  // Find geometric success prob q so the triangle's overall observed fraction
+  // (uniform accident periods, truncated-geometric lag) matches `target`.
+  function solveReportingSpeed(target, P) {
+    var lo = 0.0001, hi = 0.9999;
+    for (var it = 0; it < 60; it++) {
+      var x = (lo + hi) / 2, s = 0;
+      for (var m = 1; m <= P; m++) s += Math.pow(x, m);
+      var obs = 1 - s / P;                 // decreasing in x
+      if (obs > target) lo = x; else hi = x;
+    }
+    return 1 - (lo + hi) / 2;
   }
 
   function pickCohort(cohorts, u) {
@@ -386,6 +400,27 @@
         severity: Math.round(severity)
       };
     }
+
+    // Second, INDEPENDENT pass: assign an accident period and reporting lag to
+    // every decision from a SEPARATE seeded stream, so the primary draws above
+    // (and therefore all frequency / severity / A-E / VaR / TVaR numbers) are
+    // byte-for-byte unchanged. An error is surfaced by the valuation date iff
+    // accPeriod + devLag <= DEV_PERIODS - 1; faster-reporting scenarios (higher
+    // reportingFraction) get front-loaded lags.
+    var P = DEV_PERIODS;
+    var rng2 = mulberry32((seed ^ 0x9E3779B9) >>> 0);
+    // Calibrate the geometric reporting speed q so the OVERALL observed fraction
+    // (averaged over accident periods) equals the scenario's reportingFraction.
+    // With x = 1-q, observed(x) = 1 - (1/P) Σ_{m=1..P} x^m (decreasing in x).
+    var q = solveReportingSpeed(reportingFraction, P);
+    for (var j = 0; j < n; j++) {
+      var acc = Math.floor(rng2() * P);
+      var lag = 0;
+      while (rng2() > q && lag < P - 1) lag++;              // geometric(q), truncated
+      records[j].accPeriod = acc;
+      records[j].devLag = lag;
+      records[j].surfaced = (records[j].error && acc + lag <= P - 1) ? 1 : 0;
+    }
     return records;
   }
 
@@ -400,6 +435,7 @@
   var api = {
     SCENARIOS: SCENARIOS,
     SCENARIO_LIST: SCENARIO_LIST,
+    DEV_PERIODS: DEV_PERIODS,
     getScenario: getScenario,
     generatePortfolio: generatePortfolio,
     DEFAULTS: DEFAULTS

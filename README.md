@@ -26,8 +26,11 @@ worked example.
 /paper.html          framework paper (renders the markdown)
 /tool.html           interactive "AI Risk Lens"
 /css/styles.css
-/js/actuarial.js     pure actuarial functions (frequencySeverity, buhlmannCredibility,
-                     actualToExpected, varTvar, ibnrReserve, economicCapital)
+/js/actuarial.js     pure actuarial functions: frequencySeverity, buhlmannCredibility,
+                     actualToExpected (Poisson control limits), varTvar, ibnrReserve,
+                     economicCapital, aggregateLossSim (dependence-aware capital),
+                     developmentTriangle + chainLadder + bornhuetterFerguson +
+                     bootstrapReserve (stochastic reserving), buhlmannStraubK (estimated k)
 /js/sample-data.js   deterministic, seeded synthetic 10k-decision portfolios
                      (8-scenario registry: prior-auth, BPO, marketing, SWE,
                      fraud/AML, credit, clinical triage, customer support)

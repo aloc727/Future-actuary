@@ -62,7 +62,7 @@
         <label for="kSlider" class="form-label d-flex justify-content-between">
           <span>Credibility constant k</span><span class="val" id="kVal">2,500</span>
         </label>
-        <input type="range" class="form-range" id="kSlider" min="200" max="8000" step="100" value="2500"
+        <input type="range" class="form-range" id="kSlider" min="10" max="8000" step="10" value="2500"
                aria-label="Buhlmann credibility constant k">
         <div class="form-text">Bigger k ⇒ more evidence needed before a cohort is "believed."</div>
       </div>
@@ -159,10 +159,11 @@
         <div class="chart-wrap" style="height:230px"><canvas id="credChart" role="img" aria-label="Credibility gauge showing Z, the weight on the cohort's own experience"></canvas></div>
         <div class="text-center"><span class="gauge-z" id="credZ">Z = —</span></div>
         <p class="caption" id="credDetail">—</p>
+        <p class="caption" id="kHatNote" style="border-top:none">—</p>
         <p class="caption"><span class="tag">What this means:</span>
-          Z = n/(n+k) is the weight a cohort's own experience earns. A small cohort's alarming raw rate
-          gets pulled toward the portfolio base rate — you don't bet the firm on thin evidence, and you
-          don't ignore it either.</p>
+          Z = n/(n+k) is the weight a cohort's own experience earns. Rather than leave k a free dial,
+          <strong>k̂</strong> is estimated from the cohorts' own variance components (empirical Bühlmann-Straub) —
+          click “Use k̂” to snap the slider to the data-driven value.</p>
       </div>
     </div>
     <div class="col-lg-7">
@@ -178,6 +179,34 @@
         </div>
         <p class="caption" id="capReserve"></p>
         <p class="caption pt-0" style="border-top:none"><span class="tag">Aggregate capital:</span> economic capital = TVaR − expected loss read from a seeded <strong>Monte-Carlo of the whole book</strong> (mixed-Poisson compound with a shared systemic factor). The <strong>ρ slider</strong> sets common-cause clustering: ρ = 0 is near-independent (maximal diversification); raising ρ fattens the aggregate tail toward the <em>undiversified</em> bound (per-decision TVaR × N). See paper §5.6.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 3: stochastic reserving -->
+  <div class="row g-4 mb-4">
+    <div class="col-12">
+      <div class="panel h-100">
+        <div class="panel-head d-flex justify-content-between align-items-center">
+          <h5>5 · Stochastic reserving — development triangle</h5>
+          <span class="badge badge-soft rounded-pill">chain-ladder · Bornhuetter-Ferguson · bootstrap</span>
+        </div>
+        <div class="row g-3 p-3 pt-2">
+          <div class="col-lg-7">
+            <div class="table-responsive"><table class="tri-wrap" id="triTable"></table></div>
+            <p class="small text-muted mt-1 mb-0">Cumulative reported <span id="triErrLabel">errors</span> by accident period (rows) × development lag (columns). The shaded diagonal is “reported to date”; dotted cells (·) are the future the triangle projects.</p>
+          </div>
+          <div class="col-lg-5">
+            <table class="table table-sm align-middle mb-0"><tbody id="reserveDetailTable"></tbody></table>
+          </div>
+        </div>
+        <p class="caption"><span class="tag">What this means:</span>
+          Instead of one loss-development factor, a real triangle projects the ultimate by
+          <strong>chain-ladder</strong>, cross-checks it with <strong>Bornhuetter-Ferguson</strong> (using the model's
+          <em>expected</em> error count as the a-priori — more stable when the latest periods are immature, where
+          chain-ladder can over-project), and an <strong>over-dispersed-Poisson bootstrap</strong> gives a full reserve
+          <strong>distribution</strong> — so the risk margin is a defensible <strong>75th-percentile</strong> (IFRS-17 style),
+          not the ad-hoc tail load shown in panel 4. See paper §5.5.</p>
       </div>
     </div>
   </div>
