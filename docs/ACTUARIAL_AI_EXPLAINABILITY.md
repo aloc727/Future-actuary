@@ -403,6 +403,10 @@ The translation is purely a matter of vocabulary:
 | **Reporting lag** (IBNR) | appeals, chart review | QA sampling, client callbacks | complaints, deliverability, attribution | latent defects surfacing via incidents |
 | **Tail** (VaR/TVaR) | a catastrophic denial / class action | a systemic mis-action across a client | a viral brand-safety or mass-send event | an outage / data breach |
 
+Three of these are worked below (§§7.1–7.3); four more — fraud/AML, credit underwriting,
+clinical triage, and customer support — follow in §7.4, and all eight are live in the tool's
+scenario switcher.
+
 ### 7.1 BPO consulting — an autonomous customer-operations agent
 
 A BPO firm runs an agent that resolves clients' back-office tickets (billing, refunds, KYC,
@@ -464,7 +468,37 @@ and a high "PR pass rate" describe the 302; they are structurally blind to the 4
 defects already merged. The reserve — **$27M, dwarfing the $6.8M of expected loss** — is the
 number an actuarial lens forces onto the table and a software lens never names.
 
-### 7.4 What the cross-domain view shows
+### 7.4 Four more domains, same lens
+
+The same translation extends to any consequential decision system. Four more, each with its
+own error definition, severity basis, cohorts, and reporting lag:
+
+| System | A **decision** | An **error** | **Cohort** | Reporting lag | Headline |
+|---|---|---|---|---|---|
+| **Fraud / AML agent** (bank/fintech) | an auto-dispositioned alert | a wrong disposition (missed typology / wrong block) | alert type | chargebacks, investigations, exams | $11.19M reserve; TVaR 19.0× E[L] |
+| **Credit-underwriting agent** (lender) | an auto-decisioned application | a mis-decision (bad approval / wrongful decline) | applicant segment | defaults season over months | $23.76M reserve; A/E flags thin-file 1.36 |
+| **Clinical-triage agent** (health system) | a triage / acuity decision | an under-triage | presentation / service line | follow-up, complaints, malpractice | $42.88M reserve; mean severity $15,778 |
+| **Customer-support agent** (SaaS) | an auto-handled interaction | a bad resolution | issue type | CSAT surveys, churn realization | $2.42M reserve; A/E flags security/abuse 1.49 |
+
+Each carries a domain-native lesson:
+
+- **Fraud / AML.** With a 2.0 development factor, IBNR equals what has surfaced (363 = 363):
+  half the wrong dispositions are still working their way through chargebacks and exams. A/E
+  catches the *new typology* (crypto off-ramp, trade-based AML) that a static "fraud catch
+  rate" averages away — before it becomes an enforcement action.
+- **Credit underwriting.** This is insurance's near-twin: the legal test is a defensible,
+  non-discriminatory basis (ECOA / fair lending), the direct analog of §2's "legitimate
+  actuarial basis." Defaults season, so IBNR (416) exceeds reported (340), and cohort-level A/E
+  is a fair-lending early-warning on the thin-file and subprime segments.
+- **Clinical triage.** The highest-stakes book here: an under-triage can be fatal, so mean
+  severity ($15,778) and the reserve ($42.9M) dwarf the others despite a similar error rate.
+  A/E flags the under-triaged mental-health and geriatric presentations — exactly the cohorts
+  where a single "triage accuracy" number is most dangerous.
+- **Customer support.** High-frequency, lower-severity, but the tail is the churned enterprise
+  account or the mishandled security report gone viral. A/E flags *outage* and *security/abuse*
+  handling — where a healthy average CSAT hides concentrated churn and reputational risk.
+
+### 7.5 What the cross-domain view shows
 
 | System | Freq. | Mean severity | TVaR₀.₉₅ / decision | TVaR ÷ E[L] | LDF | Reserve | A/E-flagged cohorts |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -472,17 +506,28 @@ number an actuarial lens forces onto the table and a software lens never names.
 | BPO customer-ops | 7.76% | $1,562 | $2,257 | 18.6× | 1.67 | $3.18M | KYC, Collections |
 | Marketing agent | 7.15% | $353 | $486 | 19.2× | 1.82 | $1.04M | Influencer, Programmatic |
 | SW-engineering agent | 7.52% | $9,059 | $12,885 | 18.9× | 2.50 | $26.96M | Infra/IaC, Auth/security |
+| Fraud / AML agent | 7.63% | $3,961 | $5,733 | 19.0× | 2.00 | $11.19M | Crypto, Trade-based AML |
+| Credit underwriting | 7.56% | $8,146 | $11,501 | 18.7× | 2.22 | $23.76M | Subprime, Thin-file |
+| Clinical triage | 8.79% | $15,778 | $24,996 | 18.0× | 2.00 | $42.88M | Mental health, Geriatric |
+| Customer-support agent | 7.50% | $1,087 | $1,540 | 18.9× | 1.67 | $2.42M | Outage, Security/abuse |
 
-Two observations make the case that this is a *standard*, not a one-off:
+Three observations make the case that this is a *standard*, not a one-off:
 
-1. **The tail is never within an order of magnitude of the average.** Across four unrelated
-   domains, `TVaR₀.₉₅` runs **16–19× expected loss per decision**. A single accuracy number or
-   expected-value summary discards precisely the part that ranges 16–19× larger.
-2. **Ground-truth lag varies and matters.** The loss-development factor ranges from 1.5
-   (fast appeals) to 2.5 (slow-surfacing software defects). The slower the feedback, the more
-   of the risk is IBNR — which is exactly where the software-engineering agent's reserve
-   explodes. A framework that ignores reporting lag (every incumbent does) under-reserves most
-   in the systems being deployed fastest.
+1. **The tail is never within an order of magnitude of the average.** Across *eight* unrelated
+   domains, `TVaR₀.₉₅` runs **16.6–19.2× expected loss per decision** — a remarkably stable
+   band. A single accuracy number or expected-value summary discards precisely the part that is
+   consistently ~17–19× larger.
+2. **Ground-truth lag varies and matters.** The loss-development factor ranges from 1.5 (fast
+   appeals) to 2.5 (slow-surfacing software defects); wherever feedback is slow — code defects,
+   seasoning loan defaults, laundering typologies, malpractice-surfaced harm — **IBNR can equal
+   or exceed what has been reported**, and the reserve explodes accordingly. A framework that
+   ignores reporting lag (every incumbent does) under-reserves most in the systems being
+   deployed fastest.
+3. **The stakes scale with severity, not frequency.** Frequencies cluster in a narrow 7–9%
+   band, yet reserves span **$1.0M to $42.9M** — driven almost entirely by severity and lag,
+   the two dimensions the software paradigm has no vocabulary for. Clinical triage is only
+   marginally more error-prone than a marketing agent, but its mean severity is ~45× larger and
+   its reserve ~40× larger.
 
 The same `actuarial.js` produced all of it; only the book changed.
 
